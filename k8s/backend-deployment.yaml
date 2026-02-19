@@ -1,0 +1,206 @@
+# =============================================================================
+# LIDAR Module Backend Deployment
+# =============================================================================
+# FastAPI API Service + RQ Worker for heavy LiDAR processing
+# Uses Conda/Mamba base image with PDAL, GDAL, py3dtiles
+# =============================================================================
+
+---
+# Deployment: LIDAR Module API Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lidar-api
+  namespace: nekazari
+  labels:
+    app: lidar-api
+    component: backend
+    module: lidar
+    nekazari.io/profile: addon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lidar-api
+  template:
+    metadata:
+      labels:
+        app: lidar-api
+        component: backend
+        module: lidar
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: api
+          image: ghcr.io/k8-benetis/nkz-module-lidar/lidar-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            # Database (use existing postgresql-secret)
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secret
+                  key: postgres-url
+            # Redis
+            - name: REDIS_URL
+              value: "redis://redis-service:6379/0"
+            # MinIO (use existing minio-secret)
+            - name: MINIO_ENDPOINT
+              value: "minio-service:9000"
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: root-user
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: root-password
+            - name: MINIO_BUCKET
+              value: "lidar-tilesets"
+            - name: TILESET_PUBLIC_URL
+              value: "https://nkz.artotxiki.com/api/lidar/tilesets"
+            # Orion-LD
+            - name: ORION_URL
+              value: "http://orion-ld-service:1026"
+            # Authentication (Keycloak)
+            - name: KEYCLOAK_URL
+              value: "https://auth.artotxiki.com/auth"
+            - name: KEYCLOAK_REALM
+              value: "nekazari"
+            - name: JWT_ISSUER
+              value: "https://auth.artotxiki.com/auth/realms/nekazari"
+            - name: JWKS_URL
+              value: "https://auth.artotxiki.com/auth/realms/nekazari/protocol/openid-connect/certs"
+            - name: JWT_ALGORITHM
+              value: "RS256"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+---
+# Deployment: LIDAR Worker (RQ) - reduced resources for single-node
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lidar-worker
+  namespace: nekazari
+  labels:
+    app: lidar-worker
+    component: worker
+    module: lidar
+    nekazari.io/profile: addon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lidar-worker
+  template:
+    metadata:
+      labels:
+        app: lidar-worker
+        component: worker
+        module: lidar
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: worker
+          image: ghcr.io/k8-benetis/nkz-module-lidar/lidar-backend:latest
+          imagePullPolicy: Always
+          # Use shell to read REDIS_URL env var (includes password from secret)
+          command:
+            [
+              "/bin/sh",
+              "-c",
+              "/opt/conda/bin/rq worker lidar-processing --url $REDIS_URL",
+            ]
+          env:
+            # Database
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secret
+                  key: postgres-url
+            # Redis (with password from secret)
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: password
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis-service:6379/0"
+            # MinIO
+            - name: MINIO_ENDPOINT
+              value: "minio-service:9000"
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: root-user
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: root-password
+            - name: MINIO_BUCKET
+              value: "lidar-tilesets"
+            - name: TILESET_PUBLIC_URL
+              value: "https://nkz.artotxiki.com/api/lidar/tilesets"
+            # Orion-LD
+            - name: ORION_URL
+              value: "http://orion-ld-service:1026"
+            # Worker settings
+            - name: WORKER_QUEUE_NAME
+              value: "lidar-processing"
+            - name: WORKER_TIMEOUT
+              value: "1800"
+          resources:
+            # Reduced for single-node cluster
+            requests:
+              memory: "512Mi"
+              cpu: "100m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+
+---
+# Service: LIDAR Module API
+apiVersion: v1
+kind: Service
+metadata:
+  name: lidar-api-service
+  namespace: nekazari
+  labels:
+    app: lidar-api
+    component: backend
+    module: lidar
+spec:
+  selector:
+    app: lidar-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+  type: ClusterIP
