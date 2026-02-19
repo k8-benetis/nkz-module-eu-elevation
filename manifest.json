@@ -1,14 +1,14 @@
 {
-  "id": "hello-world",
-  "name": "hello-world",
-  "display_name": "Hello World Module",
+  "id": "nkz-module-eu-elevation",
+  "name": "nkz-module-eu-elevation",
+  "display_name": "EU Elevation Module",
   "version": "1.0.0",
-  "description": "A simple Hello World module demonstrating NKZ Platform module development. This is a template that you can customize for your module.",
-  "short_description": "Your first Nekazari module",
+  "description": "Nekazari module for generating and serving EU-wide 3D terrain and elevation data using Quantized Mesh.",
+  "short_description": "EU 3D Elevation & Terrain Data",
   "_comment_branding": "=== BRANDING & VISUAL IDENTITY ===",
   "icon": "sparkles",
-  "icon_url": "/modules/hello-world/assets/icon.png",
-  "company_logo_url": "/modules/hello-world/assets/company-logo.png",
+  "icon_url": "/modules/nkz-module-eu-elevation/assets/icon.png",
+  "company_logo_url": "/modules/nkz-module-eu-elevation/assets/company-logo.png",
   "_comment_developer": "=== DEVELOPER INFORMATION ===",
   "author": {
     "name": "Your Name",
@@ -29,8 +29,8 @@
   "required_plan_type": "basic",
   "pricing_tier": "FREE",
   "_comment_routing": "=== NAVIGATION & ROUTING ===",
-  "route_path": "/hello-world",
-  "label": "Hello World",
+  "route_path": "/eu-elevation",
+  "label": "EU Elevation",
   "required_roles": [
     "Farmer",
     "TenantAdmin",
@@ -55,7 +55,7 @@
   },
   "build_config": {
     "type": "iife",
-    "remote_entry_url": "/modules/hello-world/nkz-module.js"
+    "remote_entry_url": "/modules/nkz-module-eu-elevation/nkz-module.js"
   },
   "_comment_slots": "=== VIEWER & DASHBOARD INTEGRATION ===",
   "slots": {
@@ -72,8 +72,9 @@
     "icon": "✨",
     "color": "#3B82F6",
     "features": [
-      "Hello World",
-      "Basic Module Structure"
+      "Quantized Mesh Processing",
+      "WCS Ingestion",
+      "Geometry Decimation"
     ],
     "screenshots": [],
     "changelog_url": null,

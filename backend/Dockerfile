@@ -1,49 +1,57 @@
-# Dockerfile for LIDAR Module Backend (Conda/Mamba-based)
-# This image uses micromamba to handle complex geospatial dependencies (PDAL, GDAL)
-# Build from backend/ dir: docker build -t lidar-backend .
+# ==============================================================================
+# Nekazari 3D Elevation Worker (GDAL 3.x + Python 3.12)
+# ==============================================================================
+# Use official OSGeo GDAL image as base (Ubuntu-based) to guarantee C++ dependencies
+FROM osgeo/gdal:ubuntu-small-latest
 
-FROM mambaorg/micromamba:1.5-jammy
+# Prevent tzdata prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 
-# Set user for micromamba
-USER root
-
-# Install system dependencies needed for some Python packages
+# Install Python 3.12 and build tools for C++ extensions (tinytiles/quantized-mesh-encoder)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 \
+    python3.12-dev \
+    python3.12-venv \
+    python3-pip \
+    build-essential \
     curl \
     git \
-    postgresql-client \
+    libgdal-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Switch back to micromamba user
-USER $MAMBA_USER
+# Set default python
+RUN ln -s /usr/bin/python3.12 /usr/bin/python
 
+# Create working directory
 WORKDIR /app
 
-# Copy environment file (paths relative to backend/ build context)
-COPY --chown=$MAMBA_USER:$MAMBA_USER environment.yml /tmp/environment.yml
+# Upgrade pip to latest
+RUN python -m pip install --upgrade pip setuptools wheel
 
-# Create conda environment with all geospatial dependencies
-RUN micromamba install -y -n base -f /tmp/environment.yml && \
-    micromamba clean --all --yes
+# Install Python dependencies (including quantized-mesh-encoder which needs C++ compilation)
+# Note: GDAL Python bindings must match the system GDAL version exactly
+# The osgeo base image provides system GDAL. We install the matching python binding.
+RUN GDAL_VERSION=$(gdal-config --version) && \
+    pip install "GDAL==${GDAL_VERSION}"
 
-# Activate environment for subsequent commands
-ARG MAMBA_DOCKERFILE_ACTIVATE=1
+# Copy requirements and install
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 
-# Copy requirements for pip-only packages (RQ, FastAPI extras, etc.)
-COPY --chown=$MAMBA_USER:$MAMBA_USER requirements.txt ./requirements.txt
-
-# Install remaining Python dependencies via pip
-RUN pip install --no-cache-dir -r requirements.txt
+# --- Optimizations for GIS Processing ---
+# Maximum cache for GDAL (Adjust dynamically at runtime if possible, e.g. 50-70% of RAM)
+ENV GDAL_CACHEMAX=2048
+# Force GDAL to use multiple cores where possible
+ENV GDAL_NUM_THREADS=ALL_CPUS
+# Quiet logging for GDAL unless error
+ENV CPL_DEBUG=OFF
+# S3 Configuration fallbacks
+ENV AWS_S3_ENDPOINT=minio:9000
+ENV AWS_HTTPS=NO
 
 # Copy application code
-COPY --chown=$MAMBA_USER:$MAMBA_USER app ./app
+COPY ./app /app/app
 
-# Set Python path
-ENV PYTHONPATH=/app
-
-# Expose port
-EXPOSE 8000
-
-# Default command: Run the API server
-# For worker, override with: ["python", "-m", "app.worker"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# The worker entrypoint (Celery or custom queue consumer)
+CMD ["python", "-m", "app.worker"]

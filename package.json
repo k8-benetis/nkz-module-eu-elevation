@@ -1,7 +1,7 @@
 {
-  "name": "my-module",
+  "name": "nkz-module-eu-elevation",
   "version": "1.0.0",
-  "description": "Nekazari Module Template",
+  "description": "Nekazari EU Elevation Module",
   "license": "AGPL-3.0",
   "type": "module",
   "main": "./src/moduleEntry.ts",

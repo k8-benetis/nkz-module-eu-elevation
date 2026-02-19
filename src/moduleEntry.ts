@@ -3,10 +3,10 @@ import pkg from '../package.json';
 
 // Use strict module ID that matches database
 // This should match the ID in manifest.json
-const MODULE_ID = 'my-module';
+const MODULE_ID = 'nkz-module-eu-elevation';
 
 if (typeof console !== 'undefined' && console.debug) {
-  console.debug(`[${MODULE_ID}] init v${pkg.version}`);
+    console.debug(`[${MODULE_ID}] init v${pkg.version}`);
 }
 
 // Self-register with the host runtime

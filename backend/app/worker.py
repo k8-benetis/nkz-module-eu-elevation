@@ -1,61 +1,31 @@
-"""
-RQ Worker for LIDAR Processing.
+import os
+from celery import Celery
+from loguru import logger
 
-This module runs as a separate process to handle heavy LiDAR processing jobs.
-It connects to Redis and processes jobs from the 'lidar-processing' queue.
+# Initialize Celery app
+# Defaults to Redis running on localhost for local dev
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
 
-Usage:
-    # Run worker
-    python -m app.worker
-    
-    # Or via rq command
-    rq worker lidar-processing --url redis://redis:6379/0
-"""
-
-import logging
-import sys
-from redis import Redis
-from rq import Worker, Queue, Connection
-
-from app.config import settings
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+celery_app = Celery(
+    "elevation_worker",
+    broker=CELERY_BROKER_URL,
+    backend=CELERY_RESULT_BACKEND,
+    include=["app.tasks.elevation_tasks"]
 )
 
-logger = logging.getLogger(__name__)
+# Optional configuration
+celery_app.conf.update(
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
+    enable_utc=True,
+    worker_prefetch_multiplier=1, # Important for long-running ETL tasks (GDAL)
+    task_track_started=True
+)
 
-
-def create_redis_connection() -> Redis:
-    """Create Redis connection from settings."""
-    return Redis.from_url(settings.REDIS_URL)
-
-
-def run_worker():
-    """Start the RQ worker."""
-    logger.info("Starting LIDAR processing worker...")
-    logger.info(f"Redis URL: {settings.REDIS_URL}")
-    logger.info(f"Queue: {settings.WORKER_QUEUE_NAME}")
-    
-    redis_conn = create_redis_connection()
-    
-    with Connection(redis_conn):
-        queues = [Queue(settings.WORKER_QUEUE_NAME)]
-        
-        worker = Worker(
-            queues,
-            name=f"lidar-worker-{settings.WORKER_QUEUE_NAME}",
-            default_worker_ttl=settings.WORKER_TIMEOUT
-        )
-        
-        logger.info("Worker ready. Waiting for jobs...")
-        worker.work(with_scheduler=True)
-
+logger.info(f"Initialized Elevation Celery Worker pointing to {CELERY_BROKER_URL}")
 
 if __name__ == "__main__":
-    run_worker()
+    celery_app.start()
