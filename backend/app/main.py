@@ -1,5 +1,5 @@
 """
-FastAPI main application for LIDAR module.
+FastAPI main application for EU Elevation Module.
 """
 
 import logging
@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import lidar
+from app.api import elevation
 from app.db import init_db
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
-    logger.info("Starting LIDAR Module API...")
+    logger.info("Starting EU Elevation Module API...")
     
     # Initialize database tables
     try:
@@ -33,26 +33,20 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    logger.info("Shutting down LIDAR Module API...")
+    logger.info("Shutting down EU Elevation Module API...")
 
 
 # Create FastAPI app
 app = FastAPI(
-    title="LIDAR Module API",
+    title="EU Elevation Module API",
     description="""
-    LIDAR point cloud processing and visualization for Nekazari Platform.
+    EU 3D Elevation and Terrain processing for Nekazari Platform.
     
     ## Features
-    - Check LiDAR coverage from PNOA/CNIG database
-    - Process point clouds (crop, denoise, colorize, segment)
-    - Generate 3D Tiles for Cesium visualization
-    - Detect individual trees with crown analysis
-    
-    ## Processing Pipeline
-    1. **Ingest**: Download and crop point cloud to parcel boundary
-    2. **Spectral Fusion**: Colorize points with NDVI values
-    3. **Segmentation**: Detect individual trees using CHM
-    4. **Tiling**: Convert to 3D Tiles for web visualization
+    - BBOX Selective Ingestion of WCS/GeoTIFF
+    - Generation of Quantized Mesh (.terrain)
+    - Geometry Decimation
+    - Static Hosting via MinIO
     """,
     version="1.0.0",
     lifespan=lifespan
@@ -68,7 +62,7 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(lidar.router, prefix="/api/lidar", tags=["LIDAR Processing"])
+app.include_router(elevation.router, prefix="/api/elevation", tags=["Elevation Processing"])
 
 
 @app.get("/health")
@@ -76,7 +70,7 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "module": "lidar",
+        "module": "eu-elevation",
         "version": "1.0.0"
     }
 
@@ -85,9 +79,9 @@ async def health_check():
 async def root():
     """Root endpoint with API info."""
     return {
-        "module": "nkz-module-lidar",
+        "module": "nkz-module-eu-elevation",
         "version": "1.0.0",
-        "description": "LIDAR Point Cloud Processing Module for Nekazari",
+        "description": "EU Elevation Data Processing Module for Nekazari",
         "docs": "/docs",
         "health": "/health"
     }
