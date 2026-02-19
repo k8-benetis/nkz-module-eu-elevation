@@ -17,17 +17,17 @@ TERRAIN_OUTPUT_DIR = os.getenv("TERRAIN_OUTPUT_DIR", "/tmp/terrain_output")
 os.makedirs(TERRAIN_OUTPUT_DIR, exist_ok=True)
 
 @shared_task(bind=True, name="app.tasks.elevation_tasks.process_dem_to_quantized_mesh")
-def process_dem_to_quantized_mesh(self, country_code: str, source_urls: list[str]):
+def process_dem_to_quantized_mesh(self, country_code: str, source_urls: list[str], bbox: tuple[float, float, float, float]):
     """
-    Main ETL Pipeline for EU Elevation Processing.
-    1. Download (gdal_translate)
+    Main ETL Pipeline for EU Elevation Processing (Selective Ingestion).
+    1. Download by BBOX (gdal_translate -projwin)
     2. VRT Generation (Virtual Raster)
-    3. EPSG:4326 Reprojection
+    3. EPSG:4326 Reprojection (gdalwarp)
     4. Mesh Decimation & Quantized Mesh Encoding (.terrain)
     5. Gzip Compression (.terrain.gz)
     6. S3/MinIO Sync
     """
-    logger.info(f"Starting Elevation Processing for {country_code.upper()}...")
+    logger.info(f"Starting Selective Elevation Processing for {country_code.upper()} within BBOX: {bbox}")
     task_dir = os.path.join(TERRAIN_OUTPUT_DIR, country_code)
     os.makedirs(task_dir, exist_ok=True)
     
@@ -35,11 +35,11 @@ def process_dem_to_quantized_mesh(self, country_code: str, source_urls: list[str
     reprojected_vrt = os.path.join(task_dir, "mosaic_4326.vrt")
     
     try:
-        # Step 1 & 2: VRT Generation
-        # In a real environment, we download locally or use GDAL virtual file systems (/vsicurl/)
-        logger.info(f"[{country_code}] Generating VRT from {len(source_urls)} sources...")
-        # Example using subprocess to call gdalbuildvrt
-        vrt_cmd = ["gdalbuildvrt", vrt_path] + source_urls
+        # Step 1 & 2: Download by BBOX & VRT Generation
+        # In a real environment, we use gdal_translate with -projwin to download ONLY the needed area
+        logger.info(f"[{country_code}] Generating VRT for restricted BBOX from {len(source_urls)} sources...")
+        # Example using subprocess to call gdalbuildvrt (assuming inputs are already clipped or subsetted via WCS)
+        vrt_cmd = ["gdalbuildvrt", "-te", str(bbox[0]), str(bbox[1]), str(bbox[2]), str(bbox[3]), vrt_path] + source_urls
         # subprocess.run(vrt_cmd, check=True) # Mocked for scaffolding
         
         # Step 3: Reprojection to EPSG:4326
