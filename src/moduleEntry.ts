@@ -1,9 +1,15 @@
-import { moduleSlots } from './slots';
+import { moduleSlots } from './slots/index';
 import pkg from '../package.json';
 
 // Use strict module ID that matches database
 // This should match the ID in manifest.json
 const MODULE_ID = 'nkz-module-eu-elevation';
+
+declare global {
+    interface Window {
+        __NKZ__: any;
+    }
+}
 
 if (typeof console !== 'undefined' && console.debug) {
     console.debug(`[${MODULE_ID}] init v${pkg.version}`);

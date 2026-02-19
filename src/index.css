@@ -1,5 +1,5 @@
 /* ============================================================================
-   LIDAR Module - Premium Design System
+   ELEVATION Module - Premium Design System
    ============================================================================
    A stunning, modern design with smooth animations and premium aesthetics
    
@@ -18,44 +18,44 @@
 
 :root {
   /* Primary - Deep Purple/Indigo gradient theme */
-  --lidar-primary-50: #f5f3ff;
-  --lidar-primary-100: #ede9fe;
-  --lidar-primary-200: #ddd6fe;
-  --lidar-primary-300: #c4b5fd;
-  --lidar-primary-400: #a78bfa;
-  --lidar-primary-500: #8b5cf6;
-  --lidar-primary-600: #7c3aed;
-  --lidar-primary-700: #6d28d9;
+  --elevation-primary-50: #f5f3ff;
+  --elevation-primary-100: #ede9fe;
+  --elevation-primary-200: #ddd6fe;
+  --elevation-primary-300: #c4b5fd;
+  --elevation-primary-400: #a78bfa;
+  --elevation-primary-500: #8b5cf6;
+  --elevation-primary-600: #7c3aed;
+  --elevation-primary-700: #6d28d9;
 
   /* Accent - Vibrant Cyan for highlights */
-  --lidar-accent-400: #22d3ee;
-  --lidar-accent-500: #06b6d4;
+  --elevation-accent-400: #22d3ee;
+  --elevation-accent-500: #06b6d4;
 
   /* Success - Emerald */
-  --lidar-success-400: #34d399;
-  --lidar-success-500: #10b981;
+  --elevation-success-400: #34d399;
+  --elevation-success-500: #10b981;
 
   /* Gradients */
-  --lidar-gradient-primary: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
-  --lidar-gradient-dark: linear-gradient(180deg, #1e1b4b 0%, #0f0d1a 100%);
-  --lidar-gradient-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+  --elevation-gradient-primary: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
+  --elevation-gradient-dark: linear-gradient(180deg, #1e1b4b 0%, #0f0d1a 100%);
+  --elevation-gradient-glass: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
 
   /* Shadows */
-  --lidar-shadow-sm: 0 2px 8px -2px rgba(139, 92, 246, 0.2);
-  --lidar-shadow-md: 0 4px 20px -4px rgba(139, 92, 246, 0.3);
-  --lidar-shadow-lg: 0 8px 30px -6px rgba(139, 92, 246, 0.4);
-  --lidar-shadow-glow: 0 0 40px rgba(139, 92, 246, 0.3);
+  --elevation-shadow-sm: 0 2px 8px -2px rgba(139, 92, 246, 0.2);
+  --elevation-shadow-md: 0 4px 20px -4px rgba(139, 92, 246, 0.3);
+  --elevation-shadow-lg: 0 8px 30px -6px rgba(139, 92, 246, 0.4);
+  --elevation-shadow-glow: 0 0 40px rgba(139, 92, 246, 0.3);
 
   /* Animation */
-  --lidar-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --lidar-ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --elevation-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --elevation-ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ============================================================================
    Base Layer Styles
    ============================================================================ */
 
-.lidar-module {
+.elevation-module {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
@@ -63,7 +63,7 @@
    Glassmorphism Cards
    ============================================================================ */
 
-.lidar-card {
+.elevation-card {
   @apply rounded-2xl backdrop-blur-xl border border-white/20;
   background: linear-gradient(135deg,
       rgba(255, 255, 255, 0.95) 0%,
@@ -74,7 +74,7 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
-.lidar-card-dark {
+.elevation-card-dark {
   @apply rounded-2xl backdrop-blur-xl border border-white/10;
   background: linear-gradient(135deg,
       rgba(30, 27, 75, 0.95) 0%,
@@ -88,28 +88,28 @@
    Animated Buttons
    ============================================================================ */
 
-.lidar-btn {
+.elevation-btn {
   @apply relative overflow-hidden px-4 py-2.5 rounded-xl font-medium;
   @apply transition-all duration-300;
   @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
 }
 
-.lidar-btn-primary {
+.elevation-btn-primary {
   @apply text-white;
-  background: var(--lidar-gradient-primary);
+  background: var(--elevation-gradient-primary);
   box-shadow: 0 4px 15px -3px rgba(139, 92, 246, 0.4);
 }
 
-.lidar-btn-primary:hover:not(:disabled) {
+.elevation-btn-primary:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 8px 25px -5px rgba(139, 92, 246, 0.5);
 }
 
-.lidar-btn-primary:active:not(:disabled) {
+.elevation-btn-primary:active:not(:disabled) {
   transform: translateY(0);
 }
 
-.lidar-btn-primary::after {
+.elevation-btn-primary::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -120,22 +120,22 @@
   transition: opacity 0.3s ease;
 }
 
-.lidar-btn-primary:hover::after {
+.elevation-btn-primary:hover::after {
   opacity: 1;
 }
 
-.lidar-btn-secondary {
+.elevation-btn-secondary {
   @apply text-slate-700 bg-white border border-slate-200;
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.1);
 }
 
-.lidar-btn-secondary:hover:not(:disabled) {
+.elevation-btn-secondary:hover:not(:disabled) {
   @apply bg-slate-50 border-slate-300;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px -3px rgba(0, 0, 0, 0.15);
 }
 
-.lidar-btn:disabled {
+.elevation-btn:disabled {
   @apply opacity-50 cursor-not-allowed;
 }
 
@@ -143,21 +143,21 @@
    Progress Bar Animation
    ============================================================================ */
 
-.lidar-progress {
+.elevation-progress {
   @apply relative h-2 rounded-full overflow-hidden;
   background: linear-gradient(90deg,
       rgba(139, 92, 246, 0.1) 0%,
       rgba(6, 182, 212, 0.1) 100%);
 }
 
-.lidar-progress-bar {
+.elevation-progress-bar {
   @apply h-full rounded-full;
-  background: var(--lidar-gradient-primary);
-  transition: width 0.5s var(--lidar-ease-spring);
+  background: var(--elevation-gradient-primary);
+  transition: width 0.5s var(--elevation-ease-spring);
   position: relative;
 }
 
-.lidar-progress-bar::after {
+.elevation-progress-bar::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -182,7 +182,7 @@
    Pulse Animation for Loading States
    ============================================================================ */
 
-.lidar-pulse {
+.elevation-pulse {
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
@@ -202,7 +202,7 @@
    Floating Label Effect
    ============================================================================ */
 
-.lidar-label {
+.elevation-label {
   @apply text-xs font-semibold uppercase tracking-wider text-slate-500;
   letter-spacing: 0.08em;
 }
@@ -211,32 +211,32 @@
    Status Indicators
    ============================================================================ */
 
-.lidar-status {
+.elevation-status {
   @apply flex items-center gap-2 text-sm font-medium px-3 py-2 rounded-lg;
 }
 
-.lidar-status-processing {
+.elevation-status-processing {
   @apply bg-violet-50 text-violet-800 border border-violet-200;
 }
 
-.lidar-status-success {
+.elevation-status-success {
   @apply bg-emerald-50 text-emerald-800 border border-emerald-200;
 }
 
-.lidar-status-warning {
+.elevation-status-warning {
   @apply bg-amber-50 text-amber-800 border border-amber-200;
 }
 
-.lidar-status-error {
+.elevation-status-error {
   @apply bg-rose-50 text-rose-800 border border-rose-200;
 }
 
 /* Status indicator dot with animation */
-.lidar-status-dot {
+.elevation-status-dot {
   @apply w-2 h-2 rounded-full flex-shrink-0;
 }
 
-.lidar-status-dot-processing {
+.elevation-status-dot-processing {
   @apply bg-violet-500;
   animation: status-pulse 1.5s ease-in-out infinite;
 }
@@ -255,7 +255,7 @@
   }
 }
 
-.lidar-status-dot-success {
+.elevation-status-dot-success {
   @apply bg-emerald-500;
 }
 
@@ -263,19 +263,19 @@
    Color Mode Selector Chips
    ============================================================================ */
 
-.lidar-chip {
+.elevation-chip {
   @apply px-3 py-1.5 text-xs font-medium rounded-full cursor-pointer;
   @apply transition-all duration-200;
   @apply border border-transparent;
 }
 
-.lidar-chip-inactive {
+.elevation-chip-inactive {
   @apply bg-slate-100 text-slate-600 hover:bg-slate-200;
 }
 
-.lidar-chip-active {
+.elevation-chip-active {
   @apply text-white;
-  background: var(--lidar-gradient-primary);
+  background: var(--elevation-gradient-primary);
   box-shadow: 0 2px 10px -2px rgba(139, 92, 246, 0.4);
 }
 
@@ -283,8 +283,8 @@
    Slide-In Animation for Panels
    ============================================================================ */
 
-.lidar-slide-in {
-  animation: slideIn 0.4s var(--lidar-ease-spring);
+.elevation-slide-in {
+  animation: slideIn 0.4s var(--elevation-ease-spring);
 }
 
 @keyframes slideIn {
@@ -303,16 +303,16 @@
    Point Cloud Icon Animation
    ============================================================================ */
 
-.lidar-pointcloud-icon {
+.elevation-pointcloud-icon {
   position: relative;
 }
 
-.lidar-pointcloud-icon::after {
+.elevation-pointcloud-icon::after {
   content: '';
   position: absolute;
   inset: -4px;
   border-radius: 50%;
-  background: var(--lidar-gradient-primary);
+  background: var(--elevation-gradient-primary);
   opacity: 0;
   z-index: -1;
   animation: iconGlow 3s ease-in-out infinite;
@@ -336,14 +336,14 @@
    Tooltip Styles
    ============================================================================ */
 
-.lidar-tooltip {
+.elevation-tooltip {
   @apply absolute z-50 px-3 py-1.5 text-xs font-medium text-white rounded-lg;
   @apply pointer-events-none opacity-0 transition-opacity duration-200;
   background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
-.lidar-tooltip-visible {
+.elevation-tooltip-visible {
   @apply opacity-100;
 }
 
@@ -351,7 +351,7 @@
    Layer List Item
    ============================================================================ */
 
-.lidar-layer-item {
+.elevation-layer-item {
   @apply flex items-center justify-between p-3 rounded-xl;
   @apply transition-all duration-200;
   background: linear-gradient(135deg,
@@ -360,13 +360,13 @@
   border: 1px solid rgba(203, 213, 225, 0.3);
 }
 
-.lidar-layer-item:hover {
+.elevation-layer-item:hover {
   @apply bg-slate-100;
   border-color: rgba(139, 92, 246, 0.3);
   box-shadow: 0 2px 8px rgba(139, 92, 246, 0.1);
 }
 
-.lidar-layer-item-active {
+.elevation-layer-item-active {
   @apply bg-violet-50;
   border-color: rgba(139, 92, 246, 0.4);
   box-shadow: 0 2px 12px rgba(139, 92, 246, 0.15);
@@ -376,7 +376,7 @@
    Upload Dropzone
    ============================================================================ */
 
-.lidar-dropzone {
+.elevation-dropzone {
   @apply border-2 border-dashed rounded-xl p-6 text-center;
   @apply transition-all duration-300;
   border-color: rgba(139, 92, 246, 0.3);
@@ -385,8 +385,8 @@
       rgba(6, 182, 212, 0.03) 100%);
 }
 
-.lidar-dropzone:hover,
-.lidar-dropzone-active {
+.elevation-dropzone:hover,
+.elevation-dropzone-active {
   border-color: rgba(139, 92, 246, 0.6);
   background: linear-gradient(135deg,
       rgba(139, 92, 246, 0.08) 0%,
@@ -398,19 +398,19 @@
    Scrollbar Styling
    ============================================================================ */
 
-.lidar-scrollbar::-webkit-scrollbar {
+.elevation-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
 
-.lidar-scrollbar::-webkit-scrollbar-track {
+.elevation-scrollbar::-webkit-scrollbar-track {
   @apply bg-slate-100 rounded-full;
 }
 
-.lidar-scrollbar::-webkit-scrollbar-thumb {
+.elevation-scrollbar::-webkit-scrollbar-thumb {
   @apply bg-slate-300 rounded-full;
 }
 
-.lidar-scrollbar::-webkit-scrollbar-thumb:hover {
+.elevation-scrollbar::-webkit-scrollbar-thumb:hover {
   @apply bg-slate-400;
 }
 
@@ -418,12 +418,12 @@
    3D Effect for Cards
    ============================================================================ */
 
-.lidar-3d-card {
+.elevation-3d-card {
   transform-style: preserve-3d;
   transition: transform 0.3s ease;
 }
 
-.lidar-3d-card:hover {
+.elevation-3d-card:hover {
   transform: perspective(1000px) rotateX(2deg) rotateY(-2deg);
 }
 
@@ -431,16 +431,16 @@
    Coverage Badge
    ============================================================================ */
 
-.lidar-coverage-badge {
+.elevation-coverage-badge {
   @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
 }
 
-.lidar-coverage-available {
+.elevation-coverage-available {
   @apply bg-emerald-100 text-emerald-700;
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
 }
 
-.lidar-coverage-unavailable {
+.elevation-coverage-unavailable {
   @apply bg-amber-100 text-amber-700;
   box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.1);
 }

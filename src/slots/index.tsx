@@ -1,25 +1,13 @@
-/**
- * Slot Registration for LIDAR Module
- * 
- * Defines all slots that integrate with the Unified Viewer.
- * Each widget includes explicit `moduleId` for proper provider wrapping.
- */
-
 import React from 'react';
-import LidarLayerControl from '../components/slots/LidarLayerControl';
-import { LidarLayer } from '../components/slots/LidarLayer';
-import { LidarConfig } from '../components/slots/LidarConfig';
-import { LidarProvider } from '../services/lidarContext';
+import { ElevationAdminControl } from '../components/slots/ElevationAdminControl';
+import { ElevationLayer } from '../components/slots/ElevationLayer';
 
-// Module identifier - used for all slot widgets
-const MODULE_ID = 'lidar';
+const MODULE_ID = 'nkz-module-eu-elevation';
+
+export type SlotType = 'layer-toggle' | 'context-panel' | 'bottom-panel' | 'entity-tree' | 'map-layer' | 'dashboard-widget';
 
 export interface SlotWidgetDefinition {
   id: string;
-  /** 
-   * Module ID that owns this widget. REQUIRED for remote modules.
-   * Used by SlotRenderer to group widgets and apply shared providers.
-   */
   moduleId: string;
   component: string;
   priority: number;
@@ -31,59 +19,43 @@ export interface SlotWidgetDefinition {
   };
 }
 
-export type SlotType = 'layer-toggle' | 'context-panel' | 'bottom-panel' | 'entity-tree' | 'map-layer';
-
 export type ModuleViewerSlots = Record<SlotType, SlotWidgetDefinition[]> & {
   moduleProvider?: React.ComponentType<{ children: React.ReactNode }>;
 };
 
 /**
- * LIDAR Module Slots Configuration
- * 
- * All widgets explicitly declare moduleId: 'lidar' so the host
- * correctly groups them and applies the LidarProvider context.
+ * Elevation Module Slots Configuration
  */
-export const lidarSlots: ModuleViewerSlots = {
+export const moduleSlots: ModuleViewerSlots = {
+  // 1. Inject the Terrain Provider directly into the Cesium map
   'map-layer': [
     {
-      id: 'lidar-cesium-layer',
+      id: 'elevation-cesium-layer',
       moduleId: MODULE_ID,
-      component: 'LidarLayer',
+      component: 'ElevationLayer',
       priority: 10,
-      localComponent: LidarLayer
+      localComponent: ElevationLayer
     }
   ],
-  'layer-toggle': [
-    {
-      id: 'lidar-layer-control',
-      moduleId: MODULE_ID,
-      component: 'LidarLayerControl',
-      priority: 10,
-      localComponent: LidarLayerControl,
-      defaultProps: { visible: true },
-      showWhen: { entityType: ['AgriParcel'] }
-    }
-  ],
-  'context-panel': [
-    {
-      id: 'lidar-config',
-      moduleId: MODULE_ID,
-      component: 'LidarConfig',
-      priority: 20,
-      localComponent: LidarConfig,
-      defaultProps: { mode: 'panel' },
-      showWhen: { entityType: ['AgriParcel'] }
-    }
-  ],
-  'bottom-panel': [],
-  'entity-tree': [],
 
-  // Host's SlotRenderer wraps all widgets from this module with LidarProvider
-  moduleProvider: LidarProvider
+  // 2. Add the Admin Panel to the dashboard 
+  // (In a real scenario, we might restrict this via showWhen or a dedicated admin route)
+  'dashboard-widget': [
+    {
+      id: 'elevation-admin-control',
+      moduleId: MODULE_ID,
+      component: 'ElevationAdminControl',
+      priority: 50,
+      localComponent: ElevationAdminControl
+    }
+  ],
+
+  // Unused slots for this module
+  'layer-toggle': [],
+  'context-panel': [],
+  'bottom-panel': [],
+  'entity-tree': []
 };
 
-/**
- * Export as viewerSlots for host integration
- */
-export const viewerSlots = lidarSlots;
-export default lidarSlots;
+// Export as default for convenience
+export default moduleSlots;
