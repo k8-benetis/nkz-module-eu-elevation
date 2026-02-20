@@ -26,10 +26,9 @@ RUN ln -sf /usr/bin/python3.12 /usr/bin/python
 # Create working directory
 WORKDIR /app
 
-# Allow pip to install system-wide in Docker container
-ENV PIP_BREAK_SYSTEM_PACKAGES=1
-
-
+# Use a virtual environment with system site packages to avoid PEP 668 conflicts
+RUN python -m venv /opt/venv --system-site-packages
+ENV PATH="/opt/venv/bin:$PATH"
 # Install Python dependencies (including quantized-mesh-encoder which needs C++ compilation)
 # Note: GDAL Python bindings must match the system GDAL version exactly
 # The osgeo base image provides system GDAL. We install the matching python binding.
