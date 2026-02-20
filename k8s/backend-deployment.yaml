@@ -23,6 +23,13 @@ spec:
         - name: api
           image: ghcr.io/k8-benetis/nkz-module-eu-elevation/backend:latest
           imagePullPolicy: IfNotPresent
+          command:
+            - uvicorn
+            - "app.main:app"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
           ports:
             - containerPort: 8000
           env:
