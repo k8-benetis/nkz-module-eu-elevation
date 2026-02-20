@@ -2,7 +2,7 @@
 # Nekazari 3D Elevation Worker (GDAL 3.x + Python 3.12)
 # ==============================================================================
 # Use official OSGeo GDAL image as base (Ubuntu-based) to guarantee C++ dependencies
-FROM osgeo/gdal:ubuntu-small-latest
+FROM ghcr.io/osgeo/gdal:ubuntu-small-latest
 
 # Prevent tzdata prompts
 ENV DEBIAN_FRONTEND=noninteractive
