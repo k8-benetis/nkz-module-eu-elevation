@@ -1,206 +1,123 @@
-# =============================================================================
-# LIDAR Module Backend Deployment
-# =============================================================================
-# FastAPI API Service + RQ Worker for heavy LiDAR processing
-# Uses Conda/Mamba base image with PDAL, GDAL, py3dtiles
-# =============================================================================
-
 ---
-# Deployment: LIDAR Module API Service
+# Deployment: Elevation API
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: lidar-api
+  name: elevation-api
   namespace: nekazari
   labels:
-    app: lidar-api
-    component: backend
-    module: lidar
-    nekazari.io/profile: addon
+    app: elevation-api
+    module: eu-elevation
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: lidar-api
+      app: elevation-api
   template:
     metadata:
       labels:
-        app: lidar-api
-        component: backend
-        module: lidar
+        app: elevation-api
+        module: eu-elevation
     spec:
-      imagePullSecrets:
-        - name: ghcr-secret
       containers:
         - name: api
-          image: ghcr.io/k8-benetis/nkz-module-lidar/lidar-backend:latest
-          imagePullPolicy: Always
+          image: ghcr.io/k8-benetis/nkz-module-eu-elevation/backend:latest
+          imagePullPolicy: IfNotPresent
           ports:
-            - name: http
-              containerPort: 8000
+            - containerPort: 8000
           env:
-            # Database (use existing postgresql-secret)
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: postgresql-secret
-                  key: postgres-url
-            # Redis
-            - name: REDIS_URL
-              value: "redis://redis-service:6379/0"
-            # MinIO (use existing minio-secret)
-            - name: MINIO_ENDPOINT
-              value: "minio-service:9000"
-            - name: MINIO_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: minio-secret
-                  key: root-user
-            - name: MINIO_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: minio-secret
-                  key: root-password
-            - name: MINIO_BUCKET
-              value: "lidar-tilesets"
-            - name: TILESET_PUBLIC_URL
-              value: "https://nkz.artotxiki.com/api/lidar/tilesets"
-            # Orion-LD
-            - name: ORION_URL
-              value: "http://orion-ld-service:1026"
-            # Authentication (Keycloak)
-            - name: KEYCLOAK_URL
-              value: "https://auth.artotxiki.com/auth"
-            - name: KEYCLOAK_REALM
-              value: "nekazari"
-            - name: JWT_ISSUER
-              value: "https://auth.artotxiki.com/auth/realms/nekazari"
-            - name: JWKS_URL
-              value: "https://auth.artotxiki.com/auth/realms/nekazari/protocol/openid-connect/certs"
-            - name: JWT_ALGORITHM
-              value: "RS256"
+            - name: CELERY_BROKER_URL
+              value: "redis://redis-service:6379/10"
+            - name: CELERY_RESULT_BACKEND
+              value: "redis://redis-service:6379/11"
+            - name: TERRAIN_OUTPUT_DIR
+              value: "/tmp/terrain_output"
+          volumeMounts:
+            - name: terrain-data
+              mountPath: /tmp/terrain_output
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "100m"
+              memory: "128Mi"
+              cpu: "50m"
             limits:
-              memory: "1Gi"
+              memory: "512Mi"
               cpu: "500m"
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: http
-            initialDelaySeconds: 30
-            periodSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: http
-            initialDelaySeconds: 10
-            periodSeconds: 5
-
+      volumes:
+        - name: terrain-data
+          persistentVolumeClaim:
+            claimName: terrain-data-pvc
 ---
-# Deployment: LIDAR Worker (RQ) - reduced resources for single-node
+# Deployment: Elevation Worker
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: lidar-worker
+  name: elevation-worker
   namespace: nekazari
   labels:
-    app: lidar-worker
-    component: worker
-    module: lidar
-    nekazari.io/profile: addon
+    app: elevation-worker
+    module: eu-elevation
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: lidar-worker
+      app: elevation-worker
   template:
     metadata:
       labels:
-        app: lidar-worker
-        component: worker
-        module: lidar
+        app: elevation-worker
+        module: eu-elevation
     spec:
-      imagePullSecrets:
-        - name: ghcr-secret
       containers:
         - name: worker
-          image: ghcr.io/k8-benetis/nkz-module-lidar/lidar-backend:latest
-          imagePullPolicy: Always
-          # Use shell to read REDIS_URL env var (includes password from secret)
+          image: ghcr.io/k8-benetis/nkz-module-eu-elevation/backend:latest
+          imagePullPolicy: IfNotPresent
           command:
-            [
-              "/bin/sh",
-              "-c",
-              "/opt/conda/bin/rq worker lidar-processing --url $REDIS_URL",
-            ]
+            - celery
+            - "-A"
+            - "app.worker.celery_app"
+            - "worker"
+            - "--loglevel=info"
+            - "--concurrency=2"
           env:
-            # Database
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: postgresql-secret
-                  key: postgres-url
-            # Redis (with password from secret)
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: redis-secret
-                  key: password
-            - name: REDIS_URL
-              value: "redis://:$(REDIS_PASSWORD)@redis-service:6379/0"
-            # MinIO
-            - name: MINIO_ENDPOINT
-              value: "minio-service:9000"
-            - name: MINIO_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: minio-secret
-                  key: root-user
-            - name: MINIO_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: minio-secret
-                  key: root-password
-            - name: MINIO_BUCKET
-              value: "lidar-tilesets"
-            - name: TILESET_PUBLIC_URL
-              value: "https://nkz.artotxiki.com/api/lidar/tilesets"
-            # Orion-LD
-            - name: ORION_URL
-              value: "http://orion-ld-service:1026"
-            # Worker settings
-            - name: WORKER_QUEUE_NAME
-              value: "lidar-processing"
-            - name: WORKER_TIMEOUT
-              value: "1800"
+            - name: CELERY_BROKER_URL
+              value: "redis://redis-service:6379/10"
+            - name: CELERY_RESULT_BACKEND
+              value: "redis://redis-service:6379/11"
+            - name: TERRAIN_OUTPUT_DIR
+              value: "/tmp/terrain_output"
+            - name: GDAL_CACHEMAX
+              value: "2048"
+            - name: GDAL_NUM_THREADS
+              value: "ALL_CPUS"
+          volumeMounts:
+            - name: terrain-data
+              mountPath: /tmp/terrain_output
           resources:
-            # Reduced for single-node cluster
             requests:
               memory: "512Mi"
               cpu: "100m"
             limits:
               memory: "2Gi"
               cpu: "1000m"
-
+      volumes:
+        - name: terrain-data
+          persistentVolumeClaim:
+            claimName: terrain-data-pvc
 ---
-# Service: LIDAR Module API
+# Service: Elevation API
 apiVersion: v1
 kind: Service
 metadata:
-  name: lidar-api-service
+  name: elevation-api-service
   namespace: nekazari
   labels:
-    app: lidar-api
-    component: backend
-    module: lidar
+    app: elevation-api
+    module: eu-elevation
 spec:
   selector:
-    app: lidar-api
+    app: elevation-api
   ports:
     - name: http
       port: 80
-      targetPort: http
+      targetPort: 8000
   type: ClusterIP
