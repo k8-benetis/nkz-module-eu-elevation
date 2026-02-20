@@ -29,8 +29,6 @@ WORKDIR /app
 # Allow pip to install system-wide in Docker container
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
-# Upgrade pip to latest
-RUN python -m pip install --upgrade pip setuptools wheel
 
 # Install Python dependencies (including quantized-mesh-encoder which needs C++ compilation)
 # Note: GDAL Python bindings must match the system GDAL version exactly
