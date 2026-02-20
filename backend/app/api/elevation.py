@@ -7,8 +7,9 @@ Provides REST endpoints for:
 """
 
 import logging
+import asyncio
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from app.middleware.auth import require_auth, get_tenant_id
@@ -70,7 +71,6 @@ async def start_ingestion(
     
     try:
         # Enqueue Celery task
-        # process_dem_to_quantized_mesh(country_code, source_urls, bbox)
         task = process_dem_to_quantized_mesh.delay(
             request.country_code,
             request.source_urls,
@@ -82,7 +82,7 @@ async def start_ingestion(
         return ProcessResponse(
             job_id=task.id,
             status="queued",
-            message="Ingestion job queued. Poll /api/elevation/status/{job_id} for updates."
+            message="Ingestion job queued. Connect to WS /api/elevation/ws/status/{job_id} for live updates."
         )
         
     except Exception as e:
@@ -99,9 +99,8 @@ async def get_job_status(
     current_user: dict = Depends(require_auth)
 ):
     """
-    Get status of a Celery processing job.
+    Get status of a Celery processing job (Legacy Polling).
     """
-    # Import AsyncResult here to avoid circular imports if worker isn't fully loaded
     from celery.result import AsyncResult
     from app.worker import celery_app
     
@@ -109,7 +108,8 @@ async def get_job_status(
     
     response = JobStatusResponse(
         job_id=job_id,
-        status=task_result.status
+        status=task_result.status,
+        result=task_result.info if isinstance(task_result.info, dict) else None
     )
     
     if task_result.successful():
@@ -118,4 +118,56 @@ async def get_job_status(
         response.error = str(task_result.result)
         
     return response
+
+
+@router.websocket("/ws/status/{job_id}")
+async def websocket_job_status(websocket: WebSocket, job_id: str):
+    """
+    Real-time WebSocket stream for Celery job status and progress.
+    """
+    await websocket.accept()
+    from celery.result import AsyncResult
+    from app.worker import celery_app
+    
+    task_result = AsyncResult(job_id, app=celery_app)
+    
+    try:
+        while True:
+            state = task_result.state
+            info = task_result.info
+            
+            payload = {
+                "job_id": job_id,
+                "status": state,
+                "progress": 0,
+                "message": ""
+            }
+            
+            if isinstance(info, dict):
+                payload["progress"] = info.get("progress", 0)
+                payload["message"] = info.get("message", "")
+                if state == "SUCCESS":
+                    payload["result"] = info
+            elif isinstance(info, Exception):
+                payload["message"] = str(info)
+                payload["error"] = True
+
+            # Emit current state
+            await websocket.send_json(payload)
+            
+            # Close connection if task is finalized
+            if state in ["SUCCESS", "FAILURE", "REVOKED"]:
+                break
+                
+            await asyncio.sleep(1)
+            
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket client disconnected from job {job_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error for job {job_id}: {e}")
+        # Try graceful close
+        try:
+            await websocket.close()
+        except:
+            pass
 

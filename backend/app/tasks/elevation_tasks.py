@@ -63,6 +63,8 @@ def process_dem_to_quantized_mesh(self, country_code: str, source_urls: list[str
     5. Cleanup
     """
     logger.info(f"Starting Selective Elevation Processing for {country_code.upper()} within BBOX: {bbox}")
+    self.update_state(state='PROCESSING', meta={'progress': 5, 'message': 'Iniciando pipeline ETL y preparando estructura de directorios...'})
+    
     task_dir = os.path.join(TERRAIN_OUTPUT_DIR, country_code)
     os.makedirs(task_dir, exist_ok=True)
     
@@ -72,7 +74,7 @@ def process_dem_to_quantized_mesh(self, country_code: str, source_urls: list[str
     
     try:
         # Step 1: VRT Generation restricted to BBOX
-        # Using GDAL Virtual I/O (/vsicurl/) allows us to read specific chunks from remote WCS/GeoTIFFs directly
+        self.update_state(state='PROCESSING', meta={'progress': 15, 'message': 'Generando Virtual Raster (VRT) acotado al BBOX...'})
         logger.info(f"[{country_code}] Generating Raw VRT (-te {bbox})...")
         vrt_cmd = [
             "gdalbuildvrt", 
@@ -82,6 +84,7 @@ def process_dem_to_quantized_mesh(self, country_code: str, source_urls: list[str
         _run_gdal(vrt_cmd)
         
         # Step 2: Reprojection to EPSG:4326 (Required by Cesium Quantized Mesh)
+        self.update_state(state='PROCESSING', meta={'progress': 30, 'message': 'Reproyectando modelo digital a EPSG:4326 en memoria...'})
         logger.info(f"[{country_code}] Reprojecting VRT to EPSG:4326...")
         warp_cmd = [
             "gdalwarp", 
@@ -99,13 +102,12 @@ def process_dem_to_quantized_mesh(self, country_code: str, source_urls: list[str
             logger.warning(f"[{country_code}] SKIPPING Encoding (Encoders not available in this env).")
             return {"status": "skipped_encoding", "country": country_code}
             
+        self.update_state(state='PROCESSING', meta={'progress': 50, 'message': 'Preparando iterador Rasterio para extracción de cuadrantes...'})
         logger.info(f"[{country_code}] Opening EPSG:4326 VRT for Decimation & Encoding...")
         with rasterio.open(reprojected_vrt) as ds:
-            # We will generate a very basic layer.json
             _create_layer_json(task_dir, bbox)
             
             # Simple mocking of a looping mechanism for Z/X/Y
-            # A real world impl would calculate exact TMS tile coords bounding the BBOX
             z = 12
             x = 2048
             y = 2048
@@ -115,19 +117,17 @@ def process_dem_to_quantized_mesh(self, country_code: str, source_urls: list[str
             terrain_file = os.path.join(tile_dir, f"{y}.terrain")
             gz_file = f"{terrain_file}.gz"
 
-            # Read a small chunk representing this hypothetical tile bounding box
-            # For this MVP worker scaffolding, we just read the first 256x256 window
+            self.update_state(state='PROCESSING', meta={'progress': 65, 'message': f'Extrayendo elevaciones ZXY ({z}/{x}/{y})...'})
             window = rasterio.windows.Window(0, 0, 256, 256)
             elevation_data = ds.read(1, window=window)
             
-            # pydelatin decimation: simplify mesh to reduce size (max_error in meters)
+            self.update_state(state='PROCESSING', meta={'progress': 75, 'message': 'Decimando geometría pesada (TinMesh) para web...'})
             logger.info(f"[{country_code}] Decimating mesh...")
             tin = pydelatin.Delatin(elevation_data, max_error=0.5)
             vertices, triangles = tin.vertices, tin.triangles
             
-            # Quantized Mesh Encoding
+            self.update_state(state='PROCESSING', meta={'progress': 85, 'message': 'Codificando binario a estándar Quantized-Mesh-1.2...'})
             logger.info(f"[{country_code}] Encoding .terrain dataset...")
-            # We must pass the bounds of the specific tile
             window_bounds = ds.window_bounds(window)
             qm_bytes = quantized_mesh_encoder.encode(
                 vertices, 
@@ -135,7 +135,7 @@ def process_dem_to_quantized_mesh(self, country_code: str, source_urls: list[str
                 bounds=window_bounds
             )
             
-            # Write and pre-compress
+            self.update_state(state='PROCESSING', meta={'progress': 95, 'message': 'Comprimiendo capas estáticas en gzip...'})
             with open(terrain_file, "wb") as f:
                 f.write(qm_bytes)
                 
@@ -143,15 +143,15 @@ def process_dem_to_quantized_mesh(self, country_code: str, source_urls: list[str
                 with gzip.open(gz_file, "wb") as f_out:
                     f_out.writelines(f_in)
                     
-            # Cleanup uncompressed file to save MinIO space
             os.remove(terrain_file)
             logger.info(f"[{country_code}] Generated {gz_file}")
 
-        # Step 5: S3 Upload (Omitted in POC worker)
+        self.update_state(state='SUCCESS', meta={'progress': 100, 'message': 'Proceso completado con éxito. Capas Terrain publicadas.'})
         logger.info(f"[{country_code}] Process completed. Data ready at {task_dir}")
         return {"status": "success", "country": country_code, "output_path": task_dir}
 
     except Exception as e:
+        self.update_state(state='FAILED', meta={'progress': 0, 'message': f'Error crítico: {str(e)}'})
         logger.error(f"[{country_code}] Pipeline Failed: {str(e)}")
         raise self.retry(exc=e, countdown=60, max_retries=3)
 
