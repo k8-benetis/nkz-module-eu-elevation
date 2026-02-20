@@ -26,6 +26,9 @@ RUN ln -sf /usr/bin/python3.12 /usr/bin/python
 # Create working directory
 WORKDIR /app
 
+# Allow pip to install system-wide in Docker container
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
+
 # Upgrade pip to latest
 RUN python -m pip install --upgrade pip setuptools wheel
 
