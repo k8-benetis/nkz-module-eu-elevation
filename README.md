@@ -10,7 +10,7 @@ By bridging the gap between flat cartography and immersive 3D agriculture, this 
 
 As a fully integrated component of the **Nekazari Standard Architecture**, this module is designed to feel native to the platform. It provides a full ETL (Extract, Transform, Load) pipeline that seamlessly converts raw geospatial data (via WCS or GeoTIFF) into the web-optimized **Quantized Mesh** format required by CesiumJS, allowing fluid 3D visualization right inside the agricultural dashboard.
 
-## ✨ Elite Features
+## Features
 
 - **Pan-European Coverage:** Unrestricted access to harmonized Digital Elevation Models (DEM) spanning the ENTIRE European Union and the UK, eliminating the need to search for local, fragmented datasets.
 - **Selective BBOX Ingestion:** Define a specific geographic area (Bounding Box) to process on-the-fly, avoiding the massive computational overhead of processing entire continents.
@@ -21,7 +21,7 @@ As a fully integrated component of the **Nekazari Standard Architecture**, this 
 - **Real-Time WebSockets Progress:** Streams live ingestion progress metrics directly from the FastAPI backend to the React frontend.
 - **Plug-and-Play Integration:** Automatically registers the `ElevationAdminControl` dashboard widget and interceptors directly into the core Nekazari application via the advanced Host Runtime IIFE API.
 
-## 🏗️ Architecture
+## Architecture
 
 1. **Backend API (FastAPI):** Exposes authenticated endpoints (`/api/elevation/ingest`) and WebSockets (`/ws/status`) to trigger and monitor ingestion jobs.
 2. **Worker Node (Celery/GDAL):** Executes the heavy lifting. Translates WCS/GeoTIFF datasets into Virtual Rasters (VRT), reprojects them to EPSG:4326, generates the mesh grids, and pre-gzips the chunks.

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { TerrainIngestionForm } from './TerrainIngestionForm';
-import { Trash2, Plus, RefreshCw, Layers } from 'lucide-react';
+import { Trash2, Plus, RefreshCw, Layers, Info } from 'lucide-react';
+import { useAuth, NKZClient, useTranslation } from '@nekazari/sdk';
 
 export interface ElevationLayer {
     id: string;
@@ -14,6 +15,15 @@ export interface ElevationLayer {
 }
 
 export const MainView: React.FC = () => {
+    const { t } = useTranslation('eu-elevation');
+    const { getToken, getTenantId } = useAuth();
+
+    const apiClient = useMemo(() => new NKZClient({
+        baseUrl: '/api/elevation',
+        getToken,
+        getTenantId
+    }), [getToken, getTenantId]);
+
     const [layers, setLayers] = useState<ElevationLayer[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
@@ -26,11 +36,8 @@ export const MainView: React.FC = () => {
     const fetchLayers = async () => {
         setIsLoading(true);
         try {
-            const res = await fetch('/api/elevation/layers');
-            if (res.ok) {
-                const data = await res.json();
-                setLayers(data);
-            }
+            const data = await apiClient.get<ElevationLayer[]>('/layers');
+            setLayers(data);
         } catch (err) {
             console.error("Failed to fetch custom terrain layers", err);
         } finally {
@@ -43,12 +50,10 @@ export const MainView: React.FC = () => {
     }, []);
 
     const handleDelete = async (id: string) => {
-        if (!window.confirm("Delete this terrain layer?")) return;
+        if (!window.confirm(t('confirmDelete', 'Delete this terrain layer?'))) return;
         try {
-            const res = await fetch(`/api/elevation/layers/${id}`, { method: 'DELETE' });
-            if (res.ok) {
-                setLayers(layers.filter(l => l.id !== id));
-            }
+            await apiClient.delete(`/layers/${id}`);
+            setLayers(layers.filter(l => l.id !== id));
         } catch (err) {
             console.error("Failed to delete layer", err);
         }
@@ -72,38 +77,45 @@ export const MainView: React.FC = () => {
         }
 
         try {
-            const res = await fetch('/api/elevation/layers', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: newName,
-                    url: newUrl,
-                    is_active: true,
-                    ...bboxArgs
-                })
+            await apiClient.post('/layers', {
+                name: newName,
+                url: newUrl,
+                is_active: true,
+                ...bboxArgs
             });
-            if (res.ok) {
-                setNewName('');
-                setNewUrl('');
-                setNewBbox('');
-                setIsCreating(false);
-                fetchLayers();
-            }
+
+            setNewName('');
+            setNewUrl('');
+            setNewBbox('');
+            setIsCreating(false);
+            fetchLayers();
         } catch (err) {
             console.error("Failed to create custom terrain layer", err);
         }
     };
 
     return (
-        <div className="w-full h-full p-6 lg:p-10 bg-slate-900 border-l border-slate-700 overflow-y-auto">
-            <div className="max-w-5xl mx-auto space-y-10">
+        <div className="w-full h-full p-6 lg:p-10 bg-gray-50 border-l border-gray-200 overflow-y-auto">
+            <div className="max-w-6xl mx-auto space-y-8">
                 {/* Header */}
-                <div className="pb-6 border-b border-slate-800">
-                    <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">EU Elevation Module</h1>
-                    <p className="text-slate-400 max-w-2xl leading-relaxed">
-                        Administrate dynamic 3D Terrain Providers for your digital twin.
-                        Generate new quantized meshes from raw data or register existing external services to visualize them instantly in the Unified Viewer.
+                <div className="pb-6 border-b border-gray-200">
+                    <h1 className="text-3xl font-bold text-gray-900 mb-2 tracking-tight">{t('title', 'EU Elevation Module')}</h1>
+                    <p className="text-gray-600 max-w-3xl leading-relaxed text-base">
+                        {t('description', 'Administrate dynamic 3D Terrain Providers for your digital twin. Generate new quantized meshes from raw data or register existing external services to visualize them instantly in the Unified Viewer.')}
                     </p>
+                </div>
+
+                {/* Documentation Section */}
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-5 mb-8 flex gap-4 text-blue-800">
+                    <Info className="min-w-[24px] mt-0.5 text-blue-500" />
+                    <div className="space-y-2 text-sm">
+                        <h3 className="font-semibold text-base text-blue-900">{t('howToUseTitle', 'How to use this module')}</h3>
+                        <p>{t('howToUse1', '1. This module globally registers a new layer type in the Unified Viewer. Once activated, a new "3D Terrain" selector will appear in the right contextual panel of the map.')}</p>
+                        <p>{t('howToUse2', '2. By default, the map runs in "Auto" mode. As you navigate the map, the module dynamically searches the list below for a terrain source whose "Bounding Box" contains the camera position.')}</p>
+                        <p>{t('howToUse3', '3. You can manually forcefully enable/disable terrain or pick a specific data source from the selector regardless of location.')}</p>
+                        <p>{t('howToUse4', '4. Use the "Add Terrain Source" button to register URLs pointing to your own pre-generated Cesium Terrain Providers globally.')}</p>
+                        <p>{t('howToUse5', '5. To automatically generate and ingest fresh quantized mesh terrain from any WCS endpoint (like IGN-Spain) or local GeoTIFF file, use the "Run Ingestion Pipeline" dashboard on the right.')}</p>
+                    </div>
                 </div>
 
                 {/* Main Content Grid */}
@@ -111,41 +123,41 @@ export const MainView: React.FC = () => {
 
                     {/* Left Column: Management */}
                     <div className="lg:col-span-7 space-y-6">
-                        <section className="bg-slate-900/50 backdrop-blur-md rounded-2xl border border-slate-700/50 shadow-xl overflow-hidden">
-                            <div className="p-5 border-b border-slate-700/50 flex justify-between items-center bg-slate-800/20">
-                                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                                    <Layers className="w-5 h-5 text-emerald-400" />
-                                    Configured Terrain Sources
+                        <section className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                                <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                                    <Layers className="w-5 h-5 text-green-600" />
+                                    {t('configuredSources', 'Configured Terrain Sources')}
                                 </h2>
-                                <button onClick={fetchLayers} className="p-2 text-slate-400 hover:text-white transition-colors rounded-full hover:bg-slate-800">
+                                <button onClick={fetchLayers} className="p-2 text-gray-400 hover:text-gray-700 transition-colors rounded-full hover:bg-gray-100">
                                     <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                                 </button>
                             </div>
 
                             <div className="p-0">
                                 {layers.length === 0 && !isLoading ? (
-                                    <div className="p-8 text-center text-slate-500">
-                                        <p>No custom terrain layers configured.</p>
+                                    <div className="p-8 text-center text-gray-500 bg-white">
+                                        <p>{t('noSources', 'No custom terrain layers configured.')}</p>
                                     </div>
                                 ) : (
-                                    <div className="divide-y divide-slate-800/50">
+                                    <div className="divide-y divide-gray-100 bg-white">
                                         {layers.map(layer => (
-                                            <div key={layer.id} className="p-5 flex items-start justify-between group hover:bg-slate-800/30 transition-colors">
+                                            <div key={layer.id} className="p-5 flex items-start justify-between group hover:bg-gray-50 transition-colors">
                                                 <div className="space-y-1">
-                                                    <h3 className="font-medium text-slate-200">{layer.name}</h3>
-                                                    <a href={layer.url} target="_blank" rel="noreferrer" className="text-sm text-blue-400 hover:underline break-all block">
+                                                    <h3 className="font-medium text-gray-800">{layer.name}</h3>
+                                                    <a href={layer.url} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:text-blue-800 hover:underline break-all block">
                                                         {layer.url}
                                                     </a>
                                                     {(layer.bbox_minx !== undefined && layer.bbox_minx !== null) && (
-                                                        <p className="text-xs text-slate-500 mt-2 font-mono bg-slate-900/50 inline-block px-2 py-1 rounded">
-                                                            BBOX: [{layer.bbox_minx}, {layer.bbox_miny}, {layer.bbox_maxx}, {layer.bbox_maxy}]
+                                                        <p className="text-xs text-gray-500 mt-2 font-mono bg-gray-100 inline-block px-2 py-1 rounded">
+                                                            {t('bboxLabel', 'BBOX')}: [{layer.bbox_minx}, {layer.bbox_miny}, {layer.bbox_maxx}, {layer.bbox_maxy}]
                                                         </p>
                                                     )}
                                                 </div>
                                                 <button
                                                     onClick={() => handleDelete(layer.id)}
-                                                    className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded opacity-0 group-hover:opacity-100 transition-all"
-                                                    title="Delete Source"
+                                                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded opacity-0 group-hover:opacity-100 transition-all font-medium"
+                                                    title={t('deleteSource', 'Delete Source')}
                                                 >
                                                     <Trash2 className="w-4 h-4" />
                                                 </button>
@@ -156,55 +168,55 @@ export const MainView: React.FC = () => {
                             </div>
 
                             {/* Add New Layer Form */}
-                            <div className="p-5 bg-slate-800/30 border-t border-slate-700/50">
+                            <div className="p-5 bg-gray-50 border-t border-gray-200">
                                 {!isCreating ? (
                                     <button
                                         onClick={() => setIsCreating(true)}
-                                        className="w-full py-3 flex items-center justify-center gap-2 text-emerald-400 border border-dashed border-emerald-900/50 rounded-xl hover:bg-emerald-900/10 transition-colors"
+                                        className="w-full py-3 flex items-center justify-center gap-2 text-green-700 font-medium border border-dashed border-green-300 bg-green-50/50 rounded-xl hover:bg-green-100/50 transition-colors"
                                     >
-                                        <Plus className="w-4 h-4" /> Add Terrain Source
+                                        <Plus className="w-4 h-4" /> {t('addSourceBtn', 'Add Terrain Source')}
                                     </button>
                                 ) : (
                                     <form onSubmit={handleCreate} className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div className="space-y-1">
-                                                <label className="text-xs text-slate-400">Layer Name <span className="text-red-400">*</span></label>
+                                                <label className="text-xs font-medium text-gray-600">{t('layerName', 'Layer Name')} <span className="text-red-500">*</span></label>
                                                 <input
                                                     type="text" required value={newName} onChange={e => setNewName(e.target.value)}
                                                     placeholder="UK Environment Agency 1m"
-                                                    className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:border-emerald-500 focus:outline-none"
+                                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-800 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition-shadow"
                                                 />
                                             </div>
                                             <div className="space-y-1">
-                                                <label className="text-xs text-slate-400">Bounding Box (Optional EPSG:4326)</label>
+                                                <label className="text-xs font-medium text-gray-600">{t('bboxOptional', 'Bounding Box (Optional EPSG:4326)')}</label>
                                                 <input
                                                     type="text" value={newBbox} onChange={e => setNewBbox(e.target.value)}
                                                     placeholder="minX, minY, maxX, maxY"
-                                                    className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:border-emerald-500 focus:outline-none"
+                                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-800 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition-shadow"
                                                 />
                                             </div>
                                         </div>
                                         <div className="space-y-1">
-                                            <label className="text-xs text-slate-400">Cesium Terrain Provider URL <span className="text-red-400">*</span></label>
+                                            <label className="text-xs font-medium text-gray-600">{t('cesiumUrl', 'Cesium Terrain Provider URL')} <span className="text-red-500">*</span></label>
                                             <input
                                                 type="url" required value={newUrl} onChange={e => setNewUrl(e.target.value)}
                                                 placeholder="https://terrain.robotika.cloud/uk"
-                                                className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:border-emerald-500 focus:outline-none font-mono"
+                                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-800 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none transition-shadow font-mono"
                                             />
                                         </div>
                                         <div className="flex justify-end gap-3 pt-2">
                                             <button
                                                 type="button"
                                                 onClick={() => setIsCreating(false)}
-                                                className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-slate-800"
+                                                className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 transition-colors rounded-lg hover:bg-gray-100"
                                             >
-                                                Cancel
+                                                {t('cancel', 'Cancel')}
                                             </button>
                                             <button
                                                 type="submit"
-                                                className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg transition-colors shadow-lg shadow-emerald-900/20"
+                                                className="px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors shadow-sm"
                                             >
-                                                Register Layer
+                                                {t('registerLayer', 'Register Layer')}
                                             </button>
                                         </div>
                                     </form>
@@ -216,8 +228,6 @@ export const MainView: React.FC = () => {
                     {/* Right Column: Ingestion Tools */}
                     <div className="lg:col-span-5">
                         <div className="sticky top-10">
-                            {/* Re-use the existing admin control panel as the creation engine view UI */}
-                            {/* But override the native styles with our new glassmorphism theme via global CSS injection or refactoring */}
                             <TerrainIngestionForm />
                         </div>
                     </div>

@@ -20,7 +20,7 @@ export default defineConfig(nkzModulePreset({
       port: 5003,
       proxy: {
         '/api': {
-          target: 'https://nkz.robotika.cloud',
+          target: process.env.VITE_DEV_API_TARGET || 'http://localhost:8000',
           changeOrigin: true,
           secure: true,
         },

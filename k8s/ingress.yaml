@@ -1,0 +1,35 @@
+---
+# Ingress: Elevation API & Terrain CDN
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eu-elevation-ingress
+  namespace: nekazari
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+  labels:
+    app: eu-elevation
+    module: eu-elevation
+spec:
+  rules:
+    - host: nekazari.robotika.cloud
+      http:
+        paths:
+          - path: /api/elevation
+            pathType: Prefix
+            backend:
+              service:
+                name: elevation-api-service
+                port:
+                  number: 80
+    - host: terrain.robotika.cloud
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: terrain-cdn-service
+                port:
+                  number: 80
