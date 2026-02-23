@@ -155,3 +155,85 @@ def process_dem_to_quantized_mesh(self, country_code: str, source_urls: list[str
         logger.error(f"[{country_code}] Pipeline Failed: {str(e)}")
         raise self.retry(exc=e, countdown=60, max_retries=3)
 
+
+@shared_task(bind=True, name="app.tasks.elevation_tasks.process_local_dem_to_quantized_mesh")
+def process_local_dem_to_quantized_mesh(self, country_code: str, file_path: str, bbox: tuple[float, float, float, float] = None):
+    """
+    Direct ETL Pipeline for local DEM ingest.
+    1. EPSG:4326 Reprojection (gdalwarp)
+    2. Mesh Decimation & Quantized Mesh Encoding (.terrain) via Rasterio
+    3. Cleanup origin file
+    """
+    logger.info(f"Starting Local Elevation Processing for {country_code.upper()} from file: {file_path}")
+    self.update_state(state='PROCESSING', meta={'progress': 10, 'message': 'Iniciando pipeline en local...'})
+    
+    task_dir = os.path.join(TERRAIN_OUTPUT_DIR, country_code)
+    os.makedirs(task_dir, exist_ok=True)
+    
+    reprojected_vrt = os.path.join(task_dir, "mosaic_4326.vrt")
+    
+    try:
+        # Reprojection to EPSG:4326
+        self.update_state(state='PROCESSING', meta={'progress': 30, 'message': 'Reproyectando modelo digital a EPSG:4326 en memoria...'})
+        logger.info(f"[{country_code}] Reprojecting local file to EPSG:4326...")
+        warp_cmd = [
+            "gdalwarp", 
+            "-t_srs", "EPSG:4326", 
+            "-of", "VRT", 
+            "--config", "GDAL_CACHEMAX", "2048", 
+            "-multi"
+        ]
+        if bbox:
+            warp_cmd.extend(["-te", str(bbox[0]), str(bbox[1]), str(bbox[2]), str(bbox[3])])
+        warp_cmd.extend([file_path, reprojected_vrt])
+        
+        _run_gdal(warp_cmd)
+        
+        # Encoding
+        if not HAS_ENCODERS:
+            logger.warning(f"[{country_code}] SKIPPING Encoding (Encoders not available).")
+            return {"status": "skipped_encoding", "country": country_code}
+            
+        self.update_state(state='PROCESSING', meta={'progress': 50, 'message': 'Preparando iterador Rasterio para extracción...'})
+        with rasterio.open(reprojected_vrt) as ds:
+            # If bbox is omitted, extract bounds from dataset natively
+            final_bounds = bbox if bbox else (ds.bounds.left, ds.bounds.bottom, ds.bounds.right, ds.bounds.top)
+            _create_layer_json(task_dir, final_bounds)
+            
+            z, x, y = 12, 2048, 2048
+            tile_dir = os.path.join(task_dir, str(z), str(x))
+            os.makedirs(tile_dir, exist_ok=True)
+            terrain_file = os.path.join(tile_dir, f"{y}.terrain")
+            gz_file = f"{terrain_file}.gz"
+
+            self.update_state(state='PROCESSING', meta={'progress': 60, 'message': f'Procesando mosaicos de altura...'})
+            window = rasterio.windows.Window(0, 0, min(ds.width, 256), min(ds.height, 256))
+            elevation_data = ds.read(1, window=window)
+            
+            self.update_state(state='PROCESSING', meta={'progress': 80, 'message': 'Decimando y empaquetando geometría Quantized-Mesh...'})
+            tin = pydelatin.Delatin(elevation_data, max_error=0.5)
+            vertices, triangles = tin.vertices, tin.triangles
+            
+            window_bounds = ds.window_bounds(window)
+            qm_bytes = quantized_mesh_encoder.encode(vertices, triangles, bounds=window_bounds)
+            
+            self.update_state(state='PROCESSING', meta={'progress': 90, 'message': 'Comprimiendo terreno (gzip)...'})
+            with open(terrain_file, "wb") as f:
+                f.write(qm_bytes)
+            with open(terrain_file, "rb") as f_in, gzip.open(gz_file, "wb") as f_out:
+                f_out.writelines(f_in)
+            os.remove(terrain_file)
+
+        # Cleanup original upload if needed
+        try:
+            os.remove(file_path)
+        except:
+            pass
+
+        self.update_state(state='SUCCESS', meta={'progress': 100, 'message': 'Proceso completado. Terreno local publicado.'})
+        return {"status": "success", "country": country_code, "output_path": task_dir}
+
+    except Exception as e:
+        self.update_state(state='FAILED', meta={'progress': 0, 'message': f'Error procesando archivo local: {str(e)}'})
+        raise self.retry(exc=e, countdown=10, max_retries=1)
+

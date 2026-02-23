@@ -6,12 +6,14 @@ from app.models.lidar_models import (
     LidarTileCache,
     JobStatus
 )
+from app.models.elevation_models import ElevationLayer
 
 __all__ = [
     "LidarCoverageIndex",
     "LidarProcessingJob",
     "PointCloudLayer",
     "LidarTileCache",
-    "JobStatus"
+    "JobStatus",
+    "ElevationLayer"
 ]
 
