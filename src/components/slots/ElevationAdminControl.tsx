@@ -5,9 +5,11 @@ import React, { useState, useRef, useEffect } from 'react';
  * Renders in a dashboard-widget or context-panel.
  */
 export const ElevationAdminControl: React.FC = () => {
+    const [activeTab, setActiveTab] = useState<'remote' | 'local'>('remote');
     const [countryCode, setCountryCode] = useState('uk');
     const [bbox, setBbox] = useState('');
     const [urls, setUrls] = useState('');
+    const [localFile, setLocalFile] = useState<File | null>(null);
     const [status, setStatus] = useState<{ message: string; isError: boolean } | null>(null);
     const [loading, setLoading] = useState(false);
 
@@ -78,29 +80,45 @@ export const ElevationAdminControl: React.FC = () => {
 
         try {
             // Parse BBOX (minX, minY, maxX, maxY)
-            const parsedBbox = bbox.split(',').map(s => parseFloat(s.trim()));
-            if (parsedBbox.length !== 4 || parsedBbox.some(isNaN)) {
-                throw new Error("Invalid BBOX format. Use 'minX,minY,maxX,maxY'");
+            let parsedBbox: number[] | null = null;
+            if (bbox.trim()) {
+                parsedBbox = bbox.split(',').map(s => parseFloat(s.trim()));
+                if (parsedBbox.length !== 4 || parsedBbox.some(isNaN)) {
+                    throw new Error("Invalid BBOX format. Use 'minX,minY,maxX,maxY'");
+                }
+            } else if (activeTab === 'remote') {
+                throw new Error("BBOX is required for remote URLs");
             }
 
-            // Parse URLs
-            const parsedUrls = urls.split('\n').map(s => s.trim()).filter(s => s.length > 0);
-            if (parsedUrls.length === 0) {
-                throw new Error("Provide at least one source URL");
-            }
+            let response;
+            if (activeTab === 'remote') {
+                const parsedUrls = urls.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+                if (parsedUrls.length === 0) {
+                    throw new Error("Provide at least one source URL");
+                }
 
-            // Make API request
-            const response = await fetch('/api/elevation/ingest', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    country_code: countryCode,
-                    bbox: parsedBbox as [number, number, number, number],
-                    source_urls: parsedUrls
-                })
-            });
+                response = await fetch('/api/elevation/ingest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        country_code: countryCode,
+                        bbox: parsedBbox as [number, number, number, number],
+                        source_urls: parsedUrls
+                    })
+                });
+            } else {
+                if (!localFile) throw new Error("Please select a file to upload");
+
+                const formData = new FormData();
+                formData.append('file', localFile);
+                formData.append('country_code', countryCode);
+                if (bbox.trim()) formData.append('bbox', bbox.trim());
+
+                response = await fetch('/api/elevation/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+            }
 
             if (!response.ok) {
                 const errorData = await response.json();
@@ -109,8 +127,6 @@ export const ElevationAdminControl: React.FC = () => {
 
             const data = await response.json();
             setStatus({ message: `Job Queued: ${data.job_id}. Connecting to worker...`, isError: false });
-
-            // Connect WebSocket for live updates
             connectWebSocket(data.job_id);
 
         } catch (error: any) {
@@ -129,8 +145,23 @@ export const ElevationAdminControl: React.FC = () => {
             </div>
 
             <p className="text-slate-400 text-sm">
-                Enqueue Quantized Mesh processing for a specific region. Hint: Use the <strong>CesiumPolygonDrawer</strong> map tool to extract coordinates.
+                Enqueue Quantized Mesh processing for a specific region.
             </p>
+
+            <div className="flex space-x-2 border-b border-slate-700 pb-2">
+                <button
+                    onClick={() => setActiveTab('remote')}
+                    className={`px-3 py-1 text-sm rounded transition-colors ${activeTab === 'remote' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                >
+                    Remote URLs
+                </button>
+                <button
+                    onClick={() => setActiveTab('local')}
+                    className={`px-3 py-1 text-sm rounded transition-colors ${activeTab === 'local' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300'}`}
+                >
+                    Local File Upload
+                </button>
+            </div>
 
             <form onSubmit={handleSubmit} className="flex flex-col space-y-3">
                 <div className="grid grid-cols-2 gap-3">
@@ -147,7 +178,9 @@ export const ElevationAdminControl: React.FC = () => {
                     </div>
 
                     <div>
-                        <label className="block text-slate-300 text-sm mb-1">Bounding Box (EPSG:4326)</label>
+                        <label className="block text-slate-300 text-sm mb-1">
+                            Bounding Box (EPSG:4326) {activeTab === 'local' && <span className="text-xs text-slate-500">(Optional)</span>}
+                        </label>
                         <input
                             type="text"
                             value={bbox}
@@ -159,17 +192,30 @@ export const ElevationAdminControl: React.FC = () => {
                     </div>
                 </div>
 
-                <div>
-                    <label className="block text-slate-300 text-sm mb-1">Source URLs (One per line)</label>
-                    <textarea
-                        value={urls}
-                        onChange={(e) => setUrls(e.target.value)}
-                        placeholder="https://server/wcs?request=GetCoverage..."
-                        rows={3}
-                        className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:border-blue-500 focus:outline-none font-mono"
-                        disabled={loading && progress !== null}
-                    />
-                </div>
+                {activeTab === 'remote' ? (
+                    <div>
+                        <label className="block text-slate-300 text-sm mb-1">Source URLs (One per line)</label>
+                        <textarea
+                            value={urls}
+                            onChange={(e) => setUrls(e.target.value)}
+                            placeholder="https://server/wcs?request=GetCoverage..."
+                            rows={3}
+                            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:border-blue-500 focus:outline-none font-mono"
+                            disabled={loading && progress !== null}
+                        />
+                    </div>
+                ) : (
+                    <div>
+                        <label className="block text-slate-300 text-sm mb-1">Local DEM File (.tif, .asc)</label>
+                        <input
+                            type="file"
+                            accept=".tif,.tiff,.asc"
+                            onChange={(e) => setLocalFile(e.target.files?.[0] || null)}
+                            className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:border-blue-500 focus:outline-none file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-blue-900 file:text-blue-300"
+                            disabled={loading && progress !== null}
+                        />
+                    </div>
+                )}
 
                 <div className="pt-2">
                     <button

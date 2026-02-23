@@ -22,9 +22,11 @@ export const ElevationLayer: React.FC<{ viewer?: any }> = ({ viewer }) => {
             console.debug("[nkz-module-eu-elevation] Injecting Terrain Provider...");
 
             // External static MinIO backend bucket or CDN serving Quantized Mesh
-            const baseUrl = window.location.origin.includes('localhost')
-                ? 'http://localhost:9000/nekazari-frontend/terrain/uk'
-                : 'https://terrain.robotika.cloud/uk';
+            // TERRAIN_URL must be configured via window.__ENV__.TERRAIN_URL or fall back to MinIO path
+            const baseUrl = (window as any).__ENV__?.TERRAIN_URL
+                || (window.location.origin.includes('localhost')
+                    ? 'http://localhost:9000/nekazari-frontend/terrain/uk'
+                    : `${window.location.origin}/terrain/uk`);
 
             const terrainProvider = new Cesium.CesiumTerrainProvider({
                 url: baseUrl,
