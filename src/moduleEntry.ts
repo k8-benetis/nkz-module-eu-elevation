@@ -1,4 +1,5 @@
 import { moduleSlots } from './slots/index';
+import MainView from './components/MainView';
 import pkg from '../package.json';
 
 // Use strict module ID that matches database
@@ -20,6 +21,7 @@ if (window.__NKZ__) {
     window.__NKZ__.register({
         id: MODULE_ID,
         viewerSlots: moduleSlots,
+        main: MainView,
         version: pkg.version,
     });
 } else {

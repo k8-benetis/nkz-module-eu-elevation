@@ -50,9 +50,19 @@ export const moduleSlots: ModuleViewerSlots = {
     }
   ],
 
+  // 3. Add to Context Panel for Unified Viewer access
+  'context-panel': [
+    {
+      id: 'elevation-context-control',
+      moduleId: MODULE_ID,
+      component: 'ElevationAdminControl',
+      priority: 50,
+      localComponent: ElevationAdminControl
+    }
+  ],
+
   // Unused slots for this module
   'layer-toggle': [],
-  'context-panel': [],
   'bottom-panel': [],
   'entity-tree': []
 };
