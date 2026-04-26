@@ -12,6 +12,13 @@ const BUNDLE_VERSION = '1.0.0-audit-' + Date.now();
 
 console.warn(`[${MODULE_ID}] 🔥 BUNDLE STARTING - VERSION: ${BUNDLE_VERSION}`);
 
+declare const Cesium: any;
+if (typeof Cesium !== 'undefined') {
+    console.warn(`[${MODULE_ID}] 🌎 CESIUM ENGINE DETECTED - VERSION: ${Cesium.VERSION}`);
+} else {
+    console.error(`[${MODULE_ID}] ❌ CESIUM ENGINE NOT FOUND IN GLOBAL SCOPE`);
+}
+
 declare global {
     interface Window {
         __NKZ__: any;
