@@ -110,22 +110,18 @@ export const ElevationLayer: React.FC = () => {
         }
     };
 
-    const addCLCLayer = useCallback(async (opacity: number = 0.6) => {
+    const addCLCLayer = useCallback((opacity: number = 0.6) => {
         if (!viewer || clcLayerRef.current) {
             console.log('[ElevationLayer] Cannot add CLC layer:', { viewer: !!viewer, hasRef: !!clcLayerRef.current });
             return;
         }
         try {
-            console.log('[ElevationLayer] 🔥 Attempting to add CLC layer (SOTA async)...');
-            const clcProvider = await Cesium.WebMapServiceImageryProvider.fromUrl(CLC_WMS_URL, {
+            console.log('[ElevationLayer] 🛰️ Adding CLC layer (Standard WMS)...');
+            const clcProvider = new Cesium.WebMapServiceImageryProvider({
+                url: CLC_WMS_URL,
                 layers: CLC_WMS_LAYERS,
                 parameters: { transparent: true, format: 'image/png' },
                 credit: new Cesium.Credit('© EEA Copernicus Land Monitoring Service — CORINE Land Cover 2018'),
-            });
-
-            // Track WMS specific errors (CORS/Availability)
-            clcProvider.errorEvent.addEventListener((err: any) => {
-                console.error('[ElevationLayer] ❌ WMS Provider Error:', err);
             });
 
             clcLayerRef.current = viewer.imageryLayers.addImageryProvider(clcProvider);
