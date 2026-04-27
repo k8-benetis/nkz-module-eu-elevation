@@ -30,10 +30,9 @@ export const ElevationLayer: React.FC = () => {
     const { getToken, getTenantId } = useAuth();
     const viewerContext = useViewerOptional();
     const viewer = viewerContext?.cesiumViewer;
-    const testEntityRef = useRef<any>(null);
 
     useEffect(() => {
-        console.warn('[ElevationLayer] 🟢 Component mounted - Version: 1.0.0-audit-v7 (Diagnostic Mode)');
+        console.warn('[ElevationLayer] 🟢 Component mounted - Version: 1.0.0-audit-FINAL');
     }, []);
 
     const apiClient = React.useMemo(() => new NKZClient({
@@ -115,19 +114,7 @@ export const ElevationLayer: React.FC = () => {
         if (!viewer || clcLayerRef.current) return;
         
         try {
-            console.warn('[ElevationLayer] 🛰️ Diagnostic: Adding Red Test Rectangle in Spain');
-            // Adding a red semi-transparent rectangle to verify we have map control
-            testEntityRef.current = viewer.entities.add({
-                name: 'Diagnostic Area',
-                rectangle: {
-                    coordinates: Cesium.Rectangle.fromDegrees(-10.0, 36.0, 4.0, 44.0),
-                    material: Cesium.Color.RED.withAlpha(0.2),
-                    outline: true,
-                    outlineColor: Cesium.Color.RED
-                }
-            });
-
-            console.warn('[ElevationLayer] 🛰️ Attempting ArcGIS REST CLC (Modern Async)...');
+            console.log('[ElevationLayer] 🛰️ Injecting CORINE Land Cover (ArcGIS REST)...');
             
             // Explicitly use global window.Cesium to ensure we hit the host's version
             const C = (window as any).Cesium || Cesium;
@@ -139,7 +126,6 @@ export const ElevationLayer: React.FC = () => {
                     credit: new Cesium.Credit('© EEA Copernicus Land Monitoring Service — CORINE Land Cover 2018'),
                 });
             } else {
-                console.warn('[ElevationLayer] ⚠️ Falling back to legacy constructor');
                 clcProvider = new C.ArcGisMapServerImageryProvider({
                     url: CLC_REST_URL,
                     enablePickFeatures: false
@@ -150,21 +136,19 @@ export const ElevationLayer: React.FC = () => {
             clcLayerRef.current.alpha = opacity;
             viewer.imageryLayers.raiseToTop(clcLayerRef.current);
             
-            console.warn('[ElevationLayer] ✅ CLC Layer successfully injected into imageryLayers');
+            console.log('[ElevationLayer] ✅ CLC Layer active');
         } catch (error) {
             console.error('[ElevationLayer] 💥 Fatal error adding CLC layer:', error);
         }
     }, [viewer]);
 
     const removeCLCLayer = useCallback(() => {
-        if (!viewer) return;
-        if (clcLayerRef.current) {
+        if (!viewer || !clcLayerRef.current) return;
+        try {
             viewer.imageryLayers.remove(clcLayerRef.current, true);
             clcLayerRef.current = null;
-        }
-        if (testEntityRef.current) {
-            viewer.entities.remove(testEntityRef.current);
-            testEntityRef.current = null;
+        } catch (error) {
+            console.error('[Elevation] Failed to remove CLC layer:', error);
         }
     }, [viewer]);
 
@@ -226,7 +210,7 @@ export const ElevationLayer: React.FC = () => {
         return () => {
             window.removeEventListener('nkz.elevation.change', onPrefChange);
             window.removeEventListener('nkz.clc.toggle', onCLCToggle);
-            removeCLCTayer();
+            removeCLCLayer();
             if (viewer && !viewer.isDestroyed()) {
                 if (viewer.scene.globe.tileLoadProgressEvent) {
                     viewer.scene.globe.tileLoadProgressEvent.removeEventListener(onTileLoadProgress);
