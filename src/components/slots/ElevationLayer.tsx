@@ -22,17 +22,18 @@ export interface TerrainTokens {
     provider_type: string;
 }
 
-const CLC_WMS_URL = 'https://image.discomap.eea.europa.eu/arcgis/services/Corine/CLC2018_WM/MapServer/WMSServer';
-const CLC_WMS_LAYERS = '0';
+// EEA ArcGIS REST endpoint is more robust than WMS for CORINE in Cesium 1.100+
+const CLC_REST_URL = 'https://image.discomap.eea.europa.eu/arcgis/rest/services/Corine/CLC2018_WM/MapServer';
 
 export const ElevationLayer: React.FC = () => {
     const { t } = useTranslation('eu-elevation');
     const { getToken, getTenantId } = useAuth();
     const viewerContext = useViewerOptional();
     const viewer = viewerContext?.cesiumViewer;
+    const testEntityRef = useRef<any>(null);
 
     useEffect(() => {
-        console.warn('[ElevationLayer] 🟢 Component mounted - Version: 1.0.0-audit-v6');
+        console.warn('[ElevationLayer] 🟢 Component mounted - Version: 1.0.0-audit-v7 (Diagnostic Mode)');
     }, []);
 
     const apiClient = React.useMemo(() => new NKZClient({
@@ -111,54 +112,59 @@ export const ElevationLayer: React.FC = () => {
     };
 
     const addCLCLayer = useCallback(async (opacity: number = 0.6) => {
-        if (!viewer || clcLayerRef.current) {
-            console.log('[ElevationLayer] Cannot add CLC layer:', { viewer: !!viewer, hasRef: !!clcLayerRef.current });
-            return;
-        }
+        if (!viewer || clcLayerRef.current) return;
+        
         try {
-            console.warn('[ElevationLayer] 🛰️ Adding CLC layer via WMS (Defensive init)...');
+            console.warn('[ElevationLayer] 🛰️ Diagnostic: Adding Red Test Rectangle in Spain');
+            // Adding a red semi-transparent rectangle to verify we have map control
+            testEntityRef.current = viewer.entities.add({
+                name: 'Diagnostic Area',
+                rectangle: {
+                    coordinates: Cesium.Rectangle.fromDegrees(-10.0, 36.0, 4.0, 44.0),
+                    material: Cesium.Color.RED.withAlpha(0.2),
+                    outline: true,
+                    outlineColor: Cesium.Color.RED
+                }
+            });
+
+            console.warn('[ElevationLayer] 🛰️ Attempting ArcGIS REST CLC (Modern Async)...');
             
+            // Explicitly use global window.Cesium to ensure we hit the host's version
+            const C = (window as any).Cesium || Cesium;
             let clcProvider;
-            
-            // SOTA for Cesium 1.104+ (like our 1.136.0): fromUrl is required for async imagery providers
-            // If we use the sync constructor with complex providers in modern Cesium, 
-            // it can crash the render loop with "e._resource is undefined"
-            if (typeof Cesium.WebMapServiceImageryProvider.fromUrl === 'function') {
-                console.log('[ElevationLayer] 🔄 Using modern async .fromUrl()');
-                clcProvider = await Cesium.WebMapServiceImageryProvider.fromUrl(CLC_WMS_URL, {
-                    layers: CLC_WMS_LAYERS,
-                    parameters: { transparent: true, format: 'image/png' },
+
+            if (C.ArcGisMapServerImageryProvider.fromUrl) {
+                clcProvider = await C.ArcGisMapServerImageryProvider.fromUrl(CLC_REST_URL, {
+                    enablePickFeatures: false,
                     credit: new Cesium.Credit('© EEA Copernicus Land Monitoring Service — CORINE Land Cover 2018'),
                 });
             } else {
-                console.log('[ElevationLayer] ⚠️ Falling back to legacy sync constructor');
-                clcProvider = new Cesium.WebMapServiceImageryProvider({
-                    url: CLC_WMS_URL,
-                    layers: CLC_WMS_LAYERS,
-                    parameters: { transparent: true, format: 'image/png' },
-                    credit: new Cesium.Credit('© EEA Copernicus Land Monitoring Service — CORINE Land Cover 2018'),
+                console.warn('[ElevationLayer] ⚠️ Falling back to legacy constructor');
+                clcProvider = new C.ArcGisMapServerImageryProvider({
+                    url: CLC_REST_URL,
+                    enablePickFeatures: false
                 });
             }
 
             clcLayerRef.current = viewer.imageryLayers.addImageryProvider(clcProvider);
             clcLayerRef.current.alpha = opacity;
-            
-            // Force it to be visible over base maps
             viewer.imageryLayers.raiseToTop(clcLayerRef.current);
             
-            console.warn('[ElevationLayer] ✅ CLC Layer added successfully. Total layers:', viewer.imageryLayers.length);
+            console.warn('[ElevationLayer] ✅ CLC Layer successfully injected into imageryLayers');
         } catch (error) {
-            console.error('[ElevationLayer] 💥 Fatal error adding WMS CLC layer:', error);
+            console.error('[ElevationLayer] 💥 Fatal error adding CLC layer:', error);
         }
     }, [viewer]);
 
     const removeCLCLayer = useCallback(() => {
-        if (!viewer || !clcLayerRef.current) return;
-        try {
+        if (!viewer) return;
+        if (clcLayerRef.current) {
             viewer.imageryLayers.remove(clcLayerRef.current, true);
             clcLayerRef.current = null;
-        } catch (error) {
-            console.error('[Elevation] Failed to remove CLC layer:', error);
+        }
+        if (testEntityRef.current) {
+            viewer.entities.remove(testEntityRef.current);
+            testEntityRef.current = null;
         }
     }, [viewer]);
 
@@ -207,7 +213,6 @@ export const ElevationLayer: React.FC = () => {
         window.addEventListener('nkz.elevation.change', onPrefChange);
         window.addEventListener('nkz.clc.toggle', onCLCToggle);
 
-        // Sync initial state from localStorage
         const savedCLC = localStorage.getItem('nkz_clc_enabled') === 'true';
         const savedOpacity = parseFloat(localStorage.getItem('nkz_clc_opacity') || '0.6');
         if (savedCLC) addCLCLayer(savedOpacity);
@@ -221,7 +226,7 @@ export const ElevationLayer: React.FC = () => {
         return () => {
             window.removeEventListener('nkz.elevation.change', onPrefChange);
             window.removeEventListener('nkz.clc.toggle', onCLCToggle);
-            removeCLCLayer();
+            removeCLCTayer();
             if (viewer && !viewer.isDestroyed()) {
                 if (viewer.scene.globe.tileLoadProgressEvent) {
                     viewer.scene.globe.tileLoadProgressEvent.removeEventListener(onTileLoadProgress);
