@@ -22,8 +22,7 @@ export interface TerrainTokens {
     provider_type: string;
 }
 
-const CLC_WMS_URL = 'https://image.discomap.eea.europa.eu/arcgis/services/Corine/CLC2018_WM/MapServer/WMSServer';
-const CLC_WMS_LAYERS = '0';
+const CLC_ARCGIS_URL = 'https://image.discomap.eea.europa.eu/arcgis/rest/services/Corine/CLC2018_WM/MapServer';
 
 export const ElevationLayer: React.FC = () => {
     const { t } = useTranslation('eu-elevation');
@@ -32,8 +31,8 @@ export const ElevationLayer: React.FC = () => {
     const viewer = viewerContext?.cesiumViewer;
 
     useEffect(() => {
-        console.log('[ElevationLayer] Component mounted, viewer present:', !!viewer);
-    }, [viewer]);
+        console.warn('[ElevationLayer] 🟢 Component mounted - Version: 1.0.0-audit-v5');
+    }, []);
 
     const apiClient = React.useMemo(() => new NKZClient({
         baseUrl: '/api/elevation',
@@ -116,22 +115,39 @@ export const ElevationLayer: React.FC = () => {
             return;
         }
         try {
-            console.log('[ElevationLayer] 🛰️ Adding CLC layer (Standard WMS)...');
-            const clcProvider = new Cesium.WebMapServiceImageryProvider({
-                url: CLC_WMS_URL,
-                layers: CLC_WMS_LAYERS,
-                parameters: { transparent: true, format: 'image/png' },
+            console.warn('[ElevationLayer] 🛰️ Adding CLC layer via ArcGIS REST...');
+            
+            // @ts-ignore
+            const clcProvider = new Cesium.ArcGisMapServerImageryProvider({
+                url: CLC_ARCGIS_URL,
+                enablePickFeatures: false,
                 credit: new Cesium.Credit('© EEA Copernicus Land Monitoring Service — CORINE Land Cover 2018'),
             });
 
             clcLayerRef.current = viewer.imageryLayers.addImageryProvider(clcProvider);
             clcLayerRef.current.alpha = opacity;
             
-            // Ensure visibility over other layers
+            // Force visibility
             viewer.imageryLayers.raiseToTop(clcLayerRef.current);
-            console.log('[ElevationLayer] ✅ CLC Layer added and raised to top');
+            console.warn('[ElevationLayer] ✅ CLC Layer added via ArcGIS. Total layers:', viewer.imageryLayers.length);
         } catch (error) {
-            console.error('[ElevationLayer] 💥 Fatal error adding CLC layer:', error);
+            console.error('[ElevationLayer] 💥 Error adding ArcGIS CLC layer:', error);
+            
+            // Fallback
+            try {
+                console.warn('[ElevationLayer] 🔄 Falling back to WMS...');
+                const clcProvider = new Cesium.WebMapServiceImageryProvider({
+                    url: 'https://image.discomap.eea.europa.eu/arcgis/services/Corine/CLC2018_WM/MapServer/WMSServer',
+                    layers: '0',
+                    parameters: { transparent: true, format: 'image/png' },
+                });
+                clcLayerRef.current = viewer.imageryLayers.addImageryProvider(clcProvider);
+                clcLayerRef.current.alpha = opacity;
+                viewer.imageryLayers.raiseToTop(clcLayerRef.current);
+                console.warn('[ElevationLayer] ✅ CLC Fallback WMS added');
+            } catch (wmsError) {
+                console.error('[ElevationLayer] ❌ All CLC fallbacks failed');
+            }
         }
     }, [viewer]);
 
