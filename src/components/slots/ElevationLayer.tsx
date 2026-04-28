@@ -70,7 +70,11 @@ export const ElevationLayer: React.FC = () => {
 
         if (tok.provider_type === 'auto') {
             const match = findLayerByCameraPosition(layers);
-            config = { type: match ? 'custom' : 'off', customUrl: match?.url };
+            config = { 
+                type: match ? 'custom' : 'cesium_world', 
+                customUrl: match?.url,
+                cesiumIonToken: tok.cesium_ion_token 
+            };
         } else if (tok.provider_type === 'custom' && tok.custom_terrain_url) {
             config = { type: 'custom', customUrl: tok.custom_terrain_url };
         } else if (tok.provider_type === 'maptiler') {
