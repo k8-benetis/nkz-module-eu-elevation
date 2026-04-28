@@ -22,10 +22,15 @@ export const TerrainIngestionForm: React.FC = () => {
     const [status, setStatus] = useState<{ message: string; isError: boolean } | null>(null);
     const [loading, setLoading] = useState(false);
     const [customSources, setCustomSources] = useState<any[]>([]);
+    const [catalogSources, setCatalogSources] = useState<any[]>([]);
 
     useEffect(() => {
         apiClient.get('/api/elevation/sources/custom').then((res: any) => {
             if (Array.isArray(res)) setCustomSources(res);
+        }).catch(console.error);
+
+        apiClient.get('/api/elevation/sources/catalog').then((res: any) => {
+            if (Array.isArray(res)) setCatalogSources(res);
         }).catch(console.error);
     }, [apiClient]);
 
@@ -216,26 +221,47 @@ export const TerrainIngestionForm: React.FC = () => {
 
                 {activeTab === 'remote' ? (
                     <div className="space-y-4">
-                        <div className="space-y-1">
-                            <label className="text-xs font-medium text-gray-600">{t('selectCustomSource', 'Use Existing Custom Source')}</label>
-                            <select
-                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-800 text-sm focus:border-blue-500 outline-none"
-                                onChange={(e) => {
-                                    const src = customSources.find(s => s.id === e.target.value);
-                                    if (src) {
-                                        setCountryCode(src.country_code);
-                                        if (src.bbox_minx != null) {
-                                            setBbox(`${src.bbox_minx}, ${src.bbox_miny}, ${src.bbox_maxx}, ${src.bbox_maxy}`);
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <label className="text-xs font-medium text-gray-600">{t('selectCatalogSource', 'Regional DEM Catalog')}</label>
+                                <select
+                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-800 text-sm focus:border-blue-500 outline-none"
+                                    onChange={(e) => {
+                                        const src = catalogSources.find(s => s.country_code === e.target.value);
+                                        if (src) {
+                                            setCountryCode(src.country_code);
+                                            setBbox(`${src.bbox[0]}, ${src.bbox[1]}, ${src.bbox[2]}, ${src.bbox[3]}`);
+                                            setUrls(src.service_url);
                                         }
-                                        setUrls(src.service_url);
-                                    }
-                                }}
-                            >
-                                <option value="">-- {t('selectSourceOptional', 'Select a saved source (optional)')} --</option>
-                                {customSources.map(s => (
-                                    <option key={s.id} value={s.id}>{s.name} ({s.country_code})</option>
-                                ))}
-                            </select>
+                                    }}
+                                >
+                                    <option value="">-- {t('selectCatalogOptional', 'Select regional source (optional)')} --</option>
+                                    {catalogSources.map(s => (
+                                        <option key={s.country_code} value={s.country_code}>{s.country_name} ({s.resolution})</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-medium text-gray-600">{t('selectCustomSource', 'Your Custom Sources')}</label>
+                                <select
+                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-800 text-sm focus:border-blue-500 outline-none"
+                                    onChange={(e) => {
+                                        const src = customSources.find(s => s.id === e.target.value);
+                                        if (src) {
+                                            setCountryCode(src.country_code || '');
+                                            if (src.bbox_minx != null) {
+                                                setBbox(`${src.bbox_minx}, ${src.bbox_miny}, ${src.bbox_maxx}, ${src.bbox_maxy}`);
+                                            }
+                                            setUrls(src.service_url);
+                                        }
+                                    }}
+                                >
+                                    <option value="">-- {t('selectSourceOptional', 'Select a saved source (optional)')} --</option>
+                                    {customSources.map(s => (
+                                        <option key={s.id} value={s.id}>{s.name} ({s.country_code})</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
                         <div className="space-y-1">
                             <label className="text-xs font-medium text-gray-600">{t('sourceUrlsLabel', 'Source URLs (One per line)')}</label>

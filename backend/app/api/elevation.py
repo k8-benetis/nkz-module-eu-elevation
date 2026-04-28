@@ -223,6 +223,21 @@ async def list_dem_sources(current_user: dict = Depends(require_auth)):
     ]
 
 
+@router.get("/sources/catalog", response_model=List[DEMSourceResponse])
+async def list_catalog_sources(current_user: dict = Depends(require_auth)):
+    """List all pre-configured DEM sources (Tier 1 catalog)."""
+    sources = get_all_sources(include_fallback=True)
+    return [
+        DEMSourceResponse(
+            country_code=s.country_code, country_name=s.country_name,
+            service_url=s.service_url, service_type=s.service_type,
+            format=s.format, resolution=s.resolution, bbox=s.bbox,
+            layer_name=s.layer_name, notes=s.notes, fallback=s.fallback,
+            requires_preprocessing=s.requires_preprocessing,
+        ) for s in sources
+    ]
+
+
 @router.get("/sources/custom", response_model=List[CustomDemSourceResponse])
 async def list_custom_sources(
     db: Session = Depends(get_db),
