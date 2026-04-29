@@ -76,27 +76,17 @@ export const ElevationLayer: React.FC = () => {
         if (!viewer) return;
         currentModeRef.current = tok.provider_type as TerrainProviderType;
 
-        // If the default provider is selected and the host already set a working
-        // terrain (non-ellipsoid), don't override it. The host's terrain may be
-        // better tuned (e.g. IGN for Spain) and our Cesium Ion token may be expired.
-        if (tok.provider_type === 'europe_copernicus' || tok.provider_type === 'auto') {
-            const current = viewer.terrainProvider;
-            if (current && !(current instanceof Cesium.EllipsoidTerrainProvider)) {
-                console.log('[Elevation] Host terrain already active, deferring to it:', current.constructor.name);
-                return;
-            }
-        }
-
         let config: TerrainProviderConfig;
 
         if (tok.provider_type === 'auto') {
             const match = findLayerByCameraPosition(layers);
             config = match
                 ? { type: 'custom' as const, customUrl: match.url, cesiumIonToken: tok.cesium_ion_token }
-                : { type: 'europe_copernicus' as const, europeCopernicusUrl: getDefaultCopernicusUrl() };
+                : { type: 'europe_copernicus' as const, cesiumIonToken: tok.cesium_ion_token, europeCopernicusUrl: getDefaultCopernicusUrl() };
         } else if (tok.provider_type === 'europe_copernicus') {
             config = {
                 type: 'europe_copernicus',
+                cesiumIonToken: tok.cesium_ion_token, // Use tenant's token if configured
                 europeCopernicusUrl: tok.europe_copernicus_url || getDefaultCopernicusUrl(),
             };
         } else if (tok.provider_type === 'custom' && tok.custom_terrain_url) {
