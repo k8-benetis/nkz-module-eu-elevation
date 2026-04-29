@@ -1,5 +1,7 @@
 {
     "title": "EU Elevation Module",
+    "europeCopernicus": "Copernicus EU Terrain",
+    "europeCopernicusDesc": "Free 30m European terrain — no API key needed",
     "description": "Manage 3D Terrain Providers for your digital twin. Choose from global providers (Cesium, MapTiler), register custom DEM sources, or process raw data into quantized mesh tiles.",
     "howToUseTitle": "How to use this module",
     "howToUse1": "1. Select a terrain provider from the 3D Terrain panel in the map viewer (Cesium World, MapTiler, or custom layers).",
@@ -84,5 +86,12 @@
     "howToUse4Short": "4. Config tokens.",
     "myTerrainPlaceholder": "My Terrain",
     "bboxPlaceholder": "minX, minY, maxX, maxY",
-    "terrainProviderUrlPlaceholder": "https://server/terrain/layer.json"
+    "terrainProviderUrlPlaceholder": "https://server/terrain/layer.json",
+    "viewOnMap": "View on Map",
+    "terrainControl": "Terrain Selection",
+    "addManualLayer": "Add layer manually (Advanced)",
+    "activeProvider": "Active Provider",
+    "fromCatalog": "from catalog",
+    "fromCustom": "from custom source",
+    "errInvalidUrl": "Invalid URL — must start with http:// or https://"
 }

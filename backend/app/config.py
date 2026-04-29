@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     # Public URL for serving tilesets (used by frontend)
     TILESET_PUBLIC_URL: str = "/terrain-tilesets"
 
+    # Default Copernicus GLO-30 terrain tileset URL for Europe
+    # Pre-ingested once by platform admin into MinIO — no per-tenant API key needed
+    EU_COPERNICUS_TERRAIN_URL: str = os.getenv(
+        "EU_COPERNICUS_TERRAIN_URL",
+        "/api/elevation/terrain/EU/layer.json"
+    )
+
     # Orion-LD Context Broker
     ORION_URL: str = "http://orion-ld:1026"
 

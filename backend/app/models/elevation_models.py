@@ -85,8 +85,8 @@ class TenantTerrainPreferences(Base):
     tenant_id = Column(String, index=True, nullable=False, unique=True)
 
     # Active provider tier
-    provider_type = Column(String, nullable=False, default="off")
-    # Values: "off" | "cesium_world" | "maptiler" | "custom" | "auto"
+    provider_type = Column(String, nullable=False, default="europe_copernicus")
+    # Values: "europe_copernicus" | "off" | "cesium_world" | "maptiler" | "custom" | "auto"
 
     # BYOK tokens (encrypted at rest in production via K8s secrets)
     cesium_ion_token = Column(Text, nullable=True)

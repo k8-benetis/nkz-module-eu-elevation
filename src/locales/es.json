@@ -1,5 +1,7 @@
 {
     "title": "Módulo de Elevación EU",
+    "europeCopernicus": "Terreno Copernicus EU",
+    "europeCopernicusDesc": "Terreno europeo gratuito a 30m — sin necesidad de API key",
     "description": "Gestiona Proveedores de Terreno 3D para tu gemelo digital. Elige entre proveedores globales (Cesium, MapTiler), registra fuentes DEM personalizadas, o procesa datos crudos en tiles quantized mesh.",
     "howToUseTitle": "Cómo usar este módulo",
     "howToUse1": "1. Selecciona un proveedor de terreno desde el panel 3D Terrain en el visor del mapa (Cesium World, MapTiler o capas personalizadas).",
@@ -84,5 +86,12 @@
     "howToUse4Short": "4. Configura tokens.",
     "myTerrainPlaceholder": "Mi Terreno",
     "bboxPlaceholder": "minX, minY, maxX, maxY",
-    "terrainProviderUrlPlaceholder": "https://servidor/terrain/layer.json"
+    "terrainProviderUrlPlaceholder": "https://servidor/terrain/layer.json",
+    "viewOnMap": "Ver en el mapa",
+    "terrainControl": "Selección de Terreno",
+    "addManualLayer": "Añadir capa manualmente (Avanzado)",
+    "activeProvider": "Proveedor Activo",
+    "fromCatalog": "del catálogo",
+    "fromCustom": "de fuente personalizada",
+    "errInvalidUrl": "URL inválida — debe empezar por http:// o https://"
 }

@@ -117,7 +117,7 @@ export const ElevationAdminControl: React.FC = () => {
             ) : (
                 <div className="space-y-1">
                     {/* Built-in providers */}
-                    {providers.filter(p => p.type === 'cesium_world' || p.type === 'maptiler').map(provider => (
+                    {providers.filter(p => p.type === 'europe_copernicus' || p.type === 'cesium_world' || p.type === 'maptiler').map(provider => (
                         <button
                             key={provider.id}
                             onClick={() => handleProviderChange(provider.type)}

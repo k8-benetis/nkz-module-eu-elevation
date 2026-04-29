@@ -19,11 +19,21 @@ export interface TerrainTokens {
     cesium_ion_token?: string;
     maptiler_api_key?: string;
     custom_terrain_url?: string;
+    europe_copernicus_url?: string;
     provider_type: string;
 }
 
 // EEA ArcGIS REST endpoint is more robust than WMS for CORINE in Cesium 1.100+
 const CLC_REST_URL = 'https://image.discomap.eea.europa.eu/arcgis/rest/services/Corine/CLC2018_WM/MapServer';
+
+function getDefaultCopernicusUrl(): string {
+    const w = window as any;
+    if (w.__ENV__?.EU_ELEVATION_COPERNICUS_URL) {
+        return w.__ENV__.EU_ELEVATION_COPERNICUS_URL;
+    }
+    // Default: pre-ingested Copernicus GLO-30 tileset hosted on platform MinIO
+    return '/api/elevation/terrain/EU/layer.json';
+}
 
 export const ElevationLayer: React.FC = () => {
     const { t } = useTranslation('eu-elevation');
@@ -70,10 +80,13 @@ export const ElevationLayer: React.FC = () => {
 
         if (tok.provider_type === 'auto') {
             const match = findLayerByCameraPosition(layers);
-            config = { 
-                type: match ? 'custom' : 'cesium_world', 
-                customUrl: match?.url,
-                cesiumIonToken: tok.cesium_ion_token 
+            config = match
+                ? { type: 'custom' as const, customUrl: match.url, cesiumIonToken: tok.cesium_ion_token }
+                : { type: 'europe_copernicus' as const, europeCopernicusUrl: getDefaultCopernicusUrl() };
+        } else if (tok.provider_type === 'europe_copernicus') {
+            config = {
+                type: 'europe_copernicus',
+                europeCopernicusUrl: tok.europe_copernicus_url || getDefaultCopernicusUrl(),
             };
         } else if (tok.provider_type === 'custom' && tok.custom_terrain_url) {
             config = { type: 'custom', customUrl: tok.custom_terrain_url };
@@ -82,7 +95,7 @@ export const ElevationLayer: React.FC = () => {
         } else if (tok.provider_type === 'cesium_world') {
             config = { type: 'cesium_world', cesiumIonToken: tok.cesium_ion_token };
         } else {
-            config = { type: 'off' };
+            config = { type: 'europe_copernicus', europeCopernicusUrl: getDefaultCopernicusUrl() };
         }
 
         const provider = createTerrainProvider(config);

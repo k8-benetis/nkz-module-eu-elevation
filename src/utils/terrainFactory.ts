@@ -13,13 +13,14 @@
 
 declare const Cesium: any;
 
-export type TerrainProviderType = 'off' | 'cesium_world' | 'maptiler' | 'custom' | 'auto';
+export type TerrainProviderType = 'off' | 'europe_copernicus' | 'cesium_world' | 'maptiler' | 'custom' | 'auto';
 
 export interface TerrainProviderConfig {
     type: TerrainProviderType;
     cesiumIonToken?: string;
     maptilerApiKey?: string;
     customUrl?: string;
+    europeCopernicusUrl?: string;
 }
 
 /**
@@ -28,6 +29,8 @@ export interface TerrainProviderConfig {
  */
 export function createTerrainProvider(config: TerrainProviderConfig): any {
     switch (config.type) {
+        case 'europe_copernicus':
+            return createEuropeCopernicusTerrain(config);
         case 'cesium_world':
             return createCesiumWorldTerrain(config.cesiumIonToken);
         case 'maptiler':
@@ -88,4 +91,22 @@ function createCustomTerrain(url?: string): any {
         console.warn('[Elevation] Custom terrain failed, falling back to ellipsoid:', error);
         return new Cesium.EllipsoidTerrainProvider();
     }
+}
+
+function createEuropeCopernicusTerrain(config: TerrainProviderConfig): any {
+    const url = config.europeCopernicusUrl || config.customUrl;
+    if (url) {
+        try {
+            return new Cesium.CesiumTerrainProvider({
+                url,
+                requestVertexNormals: true,
+                requestWaterMask: false,
+            });
+        } catch (error) {
+            console.warn('[Elevation] Copernicus EU terrain failed, falling back to Cesium World:', error);
+        }
+    }
+    // Fallback: Cesium World Terrain (free, global ~30m, uses host Ion token if available)
+    console.warn('[Elevation] No pre-ingested Copernicus tiles found — using Cesium World Terrain as fallback');
+    return createCesiumWorldTerrain(config.cesiumIonToken);
 }

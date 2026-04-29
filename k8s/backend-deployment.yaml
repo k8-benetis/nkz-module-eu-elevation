@@ -45,11 +45,15 @@ spec:
             - name: TERRAIN_WORK_DIR
               value: "/tmp/terrain_work"
             - name: ALLOWED_ORIGINS
-              value: "https://nekazari.robotika.cloud"
+              # Override per-environment via overlay (e.g. gitops/overlays/eu-elevation/)
+              # Empty default disables CORS middleware (see backend/app/main.py)
+              value: ""
             - name: JWT_ISSUER
               value: "https://auth.robotika.cloud/auth/realms/nekazari"
             - name: JWKS_URL
               value: "https://auth.robotika.cloud/auth/realms/nekazari/protocol/openid-connect/certs"
+            - name: EU_COPERNICUS_TERRAIN_URL
+              value: "/api/elevation/terrain/EU/layer.json"
             - name: MINIO_ENDPOINT
               value: "minio-service:9000"
             - name: MINIO_BUCKET
