@@ -44,11 +44,12 @@ MINIO_SECRET_KEY = os.environ.get("MINIO_SECRET_KEY", "")
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "terrain-tilesets")
 
 # GDAL S3 access for unauthenticated public bucket
-os.environ.setdefault("AWS_NO_SIGN_REQUEST", "YES")
-os.environ.setdefault("AWS_S3_ENDPOINT", S3_ENDPOINT)
-os.environ.setdefault("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR")
-os.environ.setdefault("CPL_VSIL_CURL_ALLOWED_EXTENSIONS", ".tif")
-os.environ.setdefault("GDAL_CACHEMAX", "1024")
+# MUST overwrite (not setdefault) — worker env has AWS_S3_ENDPOINT=minio:9000 globally
+os.environ["AWS_NO_SIGN_REQUEST"] = "YES"
+os.environ["AWS_S3_ENDPOINT"] = S3_ENDPOINT
+os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "EMPTY_DIR"
+os.environ["CPL_VSIL_CURL_ALLOWED_EXTENSIONS"] = ".tif"
+os.environ["GDAL_CACHEMAX"] = "1024"
 
 # Default pan-European BBOX
 DEFAULT_BBOX = (-32.0, 27.0, 45.0, 72.0)

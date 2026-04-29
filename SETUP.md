@@ -27,16 +27,17 @@ Must be placed BEFORE the `/api` catch-all route on both `nkz.robotika.cloud` an
 
 ## Default Terrain Provider
 
-The built-in `europe_copernicus` provider serves Copernicus GLO-30 (30m) terrain for
-EU+UK. It requires pre-ingested tiles in MinIO under `terrain/EU/`. To bootstrap:
+The built-in `europe_copernicus` provider delivers free 30m terrain via **Cesium World
+Terrain** (uses the host's default Cesium Ion token — no per-tenant API key needed).
 
-```bash
-kubectl exec -n nekazari deploy/elevation-worker -- \
-  python3 /app/scripts/ingest_copernicus_eu.py
-```
+Self-hosted terrain tiles on MinIO are supported for **small regions** (e.g. a single
+country or BBOX). Pan-European ingestion is not practical on single-node K3s:
+- Full EU at zooms 8-11: ~600K Cesium tiles, ~3 GB, ~2 weeks of processing
+- Worker OOMs at 1 GB RAM building a multi-thousand-tile VRT
+- Use `scripts/ingest_copernicus_direct.py --bbox=-10,35,20,55` for regional subsets
 
-Until ingestion completes, the provider gracefully falls back to Cesium World Terrain
-(uses the host's default Cesium Ion token — no per-tenant API key needed).
+If higher-res terrain is needed for specific areas, ingest them via the
+pipeline and they are picked up automatically by `auto` or `custom` modes.
 
 ## Env Vars
 

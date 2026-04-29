@@ -40,9 +40,9 @@ BUILTIN_PROVIDERS = [
         "id": "builtin_europe_copernicus",
         "name": "Copernicus EU Terrain",
         "type": "europe_copernicus",
-        "description": "Free European 30m terrain from Copernicus GLO-30 — no API key needed",
+        "description": "Free 30m terrain via Cesium World Terrain — no API key needed. Self-hosted regional tiles optional.",
         "resolution": "30m",
-        "coverage": "EU + UK",
+        "coverage": "EU + UK (Global fallback)",
         "requires_token": False,
     },
     {
