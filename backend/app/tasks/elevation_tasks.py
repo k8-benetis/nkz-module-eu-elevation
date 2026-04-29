@@ -109,10 +109,29 @@ def _tiles_in_bbox(zoom: int, bbox: tuple[float, float, float, float]) -> list[t
 # GDAL Helpers
 # =============================================================================
 
-def _run_gdal(cmd: list[str]) -> None:
+def _copernicus_tiles_for_bbox(bbox: tuple[float, float, float, float]) -> list[str]:
+    """Enumerate Copernicus GLO-30 1°×1° COG tiles covering a BBOX."""
+    west, south, east, north = bbox
+    tiles = []
+    for lat in range(int(math.floor(south)), int(math.floor(north)) + 1):
+        for lon in range(int(math.floor(west)), int(math.floor(east)) + 1):
+            lat_dir = "N" if lat >= 0 else "S"
+            lon_dir = "E" if lon >= 0 else "W"
+            tile_name = (
+                f"Copernicus_DSM_COG_10_{lat_dir}{abs(lat):02d}_00_"
+                f"{lon_dir}{abs(lon):03d}_00_DEM"
+            )
+            tiles.append(f"/vsis3/copernicus-dem-30m/{tile_name}/{tile_name}.tif")
+    return tiles
+
+
+def _run_gdal(cmd: list[str], extra_env: dict | None = None) -> None:
     """Execute a GDAL command, raising RuntimeError on failure."""
     logger.debug(f"GDAL: {' '.join(cmd)}")
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    env = os.environ.copy()
+    if extra_env:
+        env.update(extra_env)
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     if proc.returncode != 0:
         logger.error(f"GDAL stderr: {proc.stderr}")
         raise RuntimeError(f"GDAL command failed ({proc.returncode}): {' '.join(cmd[:3])}...")
@@ -121,7 +140,8 @@ def _run_gdal(cmd: list[str]) -> None:
 def _prepare_dem(
     source_urls: list[str],
     bbox: tuple[float, float, float, float],
-    work_dir: str
+    work_dir: str,
+    is_copernicus_s3: bool = False,
 ) -> str:
     """
     Prepare a EPSG:4326 VRT from source DEM files/URLs, clipped to BBOX.
@@ -130,15 +150,41 @@ def _prepare_dem(
     vrt_raw = os.path.join(work_dir, "mosaic_raw.vrt")
     vrt_4326 = os.path.join(work_dir, "mosaic_epsg4326.vrt")
 
-    # Step 1: Build VRT mosaic restricted to BBOX
-    vrt_cmd = [
-        "gdalbuildvrt",
-        "-te", str(bbox[0]), str(bbox[1]), str(bbox[2]), str(bbox[3]),
-        vrt_raw
-    ] + source_urls
-    _run_gdal(vrt_cmd)
+    # S3 env vars for unauthenticated Copernicus bucket access
+    extra_env = {}
+    if is_copernicus_s3:
+        extra_env = {
+            "AWS_NO_SIGN_REQUEST": "YES",
+            "AWS_S3_ENDPOINT": "s3.eu-central-1.amazonaws.com",
+            "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
+            "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tif",
+        }
 
-    # Step 2: Reproject to EPSG:4326 (required by Cesium)
+    # Step 1: Build VRT mosaic restricted to BBOX
+    if len(source_urls) > 100:
+        # Use input file list to avoid command-line length limits
+        tile_list_path = os.path.join(work_dir, "tiles.txt")
+        with open(tile_list_path, "w") as f:
+            for url in source_urls:
+                f.write(url + "\n")
+        vrt_cmd = [
+            "gdalbuildvrt",
+            "-te", str(bbox[0]), str(bbox[1]), str(bbox[2]), str(bbox[3]),
+            "-input_file_list", tile_list_path,
+            "-overwrite",
+            vrt_raw,
+        ]
+    else:
+        vrt_cmd = [
+            "gdalbuildvrt",
+            "-te", str(bbox[0]), str(bbox[1]), str(bbox[2]), str(bbox[3]),
+            vrt_raw,
+        ] + source_urls
+    _run_gdal(vrt_cmd, extra_env=extra_env)
+
+    # Step 2: Reproject to EPSG:4326 (required by Cesium).
+    # Copernicus COG data is already 4326, but gdalwarp ensures consistency
+    # and clips to exact BBOX. For already-4326 data this is fast.
     warp_cmd = [
         "gdalwarp",
         "-t_srs", "EPSG:4326",
@@ -146,9 +192,9 @@ def _prepare_dem(
         "--config", "GDAL_CACHEMAX", "2048",
         "-multi",
         vrt_raw,
-        vrt_4326
+        vrt_4326,
     ]
-    _run_gdal(warp_cmd)
+    _run_gdal(warp_cmd, extra_env=extra_env)
 
     return vrt_4326
 
@@ -404,41 +450,60 @@ def process_dem_to_quantized_mesh(
         try:
             vrt_path = _prepare_dem(source_urls, bbox, job_dir)
         except Exception as vrt_error:
-            # === AUTOMATIC FALLBACK ===
-            # If this is already a fallback attempt, don't recurse — fail hard
+            # === AUTOMATIC FALLBACK TO COPERNICUS GLO-30 ===
+            # Primary source failed (e.g. WCS endpoint not compatible with gdalbuildvrt).
+            # Fall back to Copernicus GLO-30 S3 tiles for the requested BBOX.
             if _is_fallback:
-                raise
-
-            # Try the pan-European fallback source
-            from app.dem_sources import get_source
-            fallback_src = get_source("EU")
-
-            if not fallback_src:
-                logger.error(f"[{country_code}] Primary source failed and no EU fallback configured")
                 raise
 
             original_error_msg = str(vrt_error)
             logger.warning(
                 f"[{country_code}] Primary source failed ({original_error_msg}). "
-                f"Falling back to {fallback_src.country_name} ({fallback_src.resolution})"
+                f"Falling back to Copernicus GLO-30 (30m) via S3."
             )
 
-            # Cleanup failed job dir
+            # Enumerate Copernicus 1°×1° tiles covering the BBOX
+            copernicus_tiles = _copernicus_tiles_for_bbox(bbox)
+            logger.info(
+                f"[{country_code}] Copernicus fallback: {len(copernicus_tiles)} tiles "
+                f"for BBOX {bbox}"
+            )
+
+            if not copernicus_tiles:
+                raise RuntimeError(
+                    f"No Copernicus tiles found for BBOX {bbox}. "
+                    f"Check that the BBOX is within the Copernicus DEM coverage area."
+                )
+
+            # Cleanup failed job dir and retry with Copernicus tiles
             import shutil
             shutil.rmtree(job_dir, ignore_errors=True)
+            job_dir = os.path.join(WORK_DIR, f"{country_code}_{self.request.id}_fallback")
+            os.makedirs(job_dir, exist_ok=True)
 
-            # Re-invoke self with fallback source
-            return process_dem_to_quantized_mesh(
-                self,
-                country_code=country_code,
-                source_urls=[fallback_src.service_url],
-                bbox=bbox,
-                zoom_min=zoom_min,
-                zoom_max=min(zoom_max, 12),  # Cap zoom for 30m resolution
-                max_error=max_error,
-                _is_fallback=True,
-                _original_error=original_error_msg
-            )
+            self.update_state(state='PROCESSING', meta={
+                'progress': 8,
+                'message': (
+                    f'Primary source unavailable. Using Copernicus GLO-30 (30m) '
+                    f'with {len(copernicus_tiles)} tiles...'
+                ),
+                'fallback_used': True,
+                'fallback_reason': original_error_msg,
+            })
+
+            try:
+                vrt_path = _prepare_dem(
+                    copernicus_tiles, bbox, job_dir, is_copernicus_s3=True
+                )
+            except Exception as fallback_error:
+                raise RuntimeError(
+                    f"Both primary source and Copernicus fallback failed. "
+                    f"Primary error: {original_error_msg}. "
+                    f"Fallback error: {fallback_error}"
+                ) from fallback_error
+
+            _is_fallback = True
+            zoom_max = min(zoom_max, 12)
 
         # Phase 2: Initialize MinIO client
         self.update_state(state='PROCESSING', meta={'progress': 10, 'message': 'Connecting to object storage...'})
