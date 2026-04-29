@@ -63,7 +63,7 @@ class CustomDemSource(Base):
     bbox_maxx = Column(Float, nullable=True)
     bbox_maxy = Column(Float, nullable=True)
 
-    # Optional auth (stored encrypted at rest in production)
+    # Optional auth (encrypted via app/common/crypto.py Fernet)
     auth_header_name = Column(String, nullable=True)
     auth_header_value = Column(Text, nullable=True)
 
@@ -88,7 +88,7 @@ class TenantTerrainPreferences(Base):
     provider_type = Column(String, nullable=False, default="europe_copernicus")
     # Values: "europe_copernicus" | "off" | "cesium_world" | "maptiler" | "custom" | "auto"
 
-    # BYOK tokens (encrypted at rest in production via K8s secrets)
+    # BYOK tokens (encrypted via app/common/crypto.py Fernet)
     cesium_ion_token = Column(Text, nullable=True)
     maptiler_api_key = Column(Text, nullable=True)
 
