@@ -29,10 +29,15 @@ declare global {
 try {
     if (window.__NKZ__) {
         console.log(`[${MODULE_ID}] 🚀 Found window.__NKZ__, registering components...`);
-        // Register module translations
-        if (i18n && i18n.addResourceBundle) {
-            i18n.addResourceBundle('en', 'eu-elevation', enTranslations, true, true);
-            i18n.addResourceBundle('es', 'eu-elevation', esTranslations, true, true);
+        
+        // Register module translations using global i18n if possible
+        const globalI18n = i18n || (window as any).__NKZ_SDK__?.i18n;
+        if (globalI18n && globalI18n.addResourceBundle) {
+            console.log(`[${MODULE_ID}] 🌐 Registering translations for 'eu-elevation' namespace`);
+            globalI18n.addResourceBundle('en', 'eu-elevation', enTranslations, true, true);
+            globalI18n.addResourceBundle('es', 'eu-elevation', esTranslations, true, true);
+        } else {
+            console.warn(`[${MODULE_ID}] ⚠️ i18n instance not found, translations may not work correctly`);
         }
 
         window.__NKZ__.register({
