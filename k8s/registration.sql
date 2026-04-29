@@ -58,17 +58,15 @@ INSERT INTO marketplace_modules (
         ],
         "slots": {
             "map-layer": [
-                {"id": "elevation-cesium-layer", "component": "ElevationLayer", "priority": 10}
+                {"id": "elevation-cesium-layer", "priority": 10, "component": "ElevationLayer"}
             ],
             "layer-toggle": [
-                {"id": "clc-layer-toggle", "component": "CorineLandCoverToggle", "priority": 30}
-            ],
-            "dashboard-widget": [
-                {"id": "elevation-admin-control", "component": "ElevationAdminControl", "priority": 50}
+                {"id": "clc-layer-toggle", "priority": 30, "component": "CorineLandCoverToggle"}
             ],
             "context-panel": [
-                {"id": "elevation-context-control", "component": "ElevationAdminControl", "priority": 50}
-            ]
+                {"id": "elevation-context-control", "priority": 50, "component": "ElevationAdminControl"}
+            ],
+            "dashboard-widget": []
         },
         "navigationItems": [
             {
