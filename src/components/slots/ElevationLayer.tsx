@@ -67,7 +67,15 @@ export const ElevationLayer: React.FC = () => {
             tokensRef.current = tok;
             layersRef.current = layers || [];
             if (viewer && tok) {
-                applyPreference(tok, layers || []);
+                // Delay to win the race condition with the host's async
+                // useTerrainProvider hook (which also sets viewer.terrainProvider
+                // via CesiumTerrainProvider.fromUrl().then(...)).
+                // 2 seconds is enough for the host's network fetch to complete.
+                setTimeout(() => {
+                    if (!viewer.isDestroyed()) {
+                        applyPreference(tok, layers || []);
+                    }
+                }, 2000);
             }
         });
     }, [viewer]);

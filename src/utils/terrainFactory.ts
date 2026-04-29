@@ -45,19 +45,20 @@ export function createTerrainProvider(config: TerrainProviderConfig): any {
 
 function createCesiumWorldTerrain(token?: string): any {
     try {
-        if (token) {
-            Cesium.Ion.defaultAccessToken = token;
-        }
-        // Cesium 1.116+ removed createWorldTerrain().
-        // Use Cesium World Terrain via Ion asset ID 1 (free global 30m).
+        // NEVER set Cesium.Ion.defaultAccessToken — the host manages it globally.
+        // Changing it breaks host imagery/terrain layers. Pass token per-call instead.
         if (typeof Cesium.CesiumTerrainProvider?.fromIonAssetId === 'function') {
             return Cesium.CesiumTerrainProvider.fromIonAssetId(1, {
+                accessToken: token || undefined,
                 requestVertexNormals: true,
                 requestWaterMask: false,
             });
         }
         // Fallback for older Cesium versions
         if (typeof Cesium.createWorldTerrain === 'function') {
+            if (token) {
+                Cesium.Ion.defaultAccessToken = token;
+            }
             return Cesium.createWorldTerrain({
                 requestVertexNormals: true,
                 requestWaterMask: false,
