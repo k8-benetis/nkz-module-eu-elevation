@@ -94,6 +94,7 @@ function createCustomTerrain(url?: string): any {
 }
 
 function createEuropeCopernicusTerrain(config: TerrainProviderConfig): any {
+    // Try pre-ingested terrain tiles first (for tenants with regional high-res data)
     const url = config.europeCopernicusUrl || config.customUrl;
     if (url) {
         try {
@@ -103,10 +104,11 @@ function createEuropeCopernicusTerrain(config: TerrainProviderConfig): any {
                 requestWaterMask: false,
             });
         } catch (error) {
-            console.warn('[Elevation] Copernicus EU terrain failed, falling back to Cesium World:', error);
+            console.warn('[Elevation] Custom terrain URL failed:', error);
         }
     }
-    // Fallback: Cesium World Terrain (free, global ~30m, uses host Ion token if available)
-    console.warn('[Elevation] No pre-ingested Copernicus tiles found — using Cesium World Terrain as fallback');
+    // Primary: Cesium World Terrain — free, global ~30m, uses host Cesium Ion token
+    // Self-hosted Copernicus tiles are only viable for small regions (country-level).
+    // Pan-European ingestion requires ~600K tiles / ~3GB — not practical on single-node K3s.
     return createCesiumWorldTerrain(config.cesiumIonToken);
 }
