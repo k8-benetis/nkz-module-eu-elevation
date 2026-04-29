@@ -328,12 +328,15 @@ def _process_tile(
         if len(vertices) < 3 or len(triangles) < 1:
             return None
 
-        # Encode to Quantized Mesh
-        qm_bytes = quantized_mesh_encoder.encode(
+        # Encode to Quantized Mesh (v2 API: writes to stream, not returns bytes)
+        qm_buffer = io.BytesIO()
+        quantized_mesh_encoder.encode(
+            qm_buffer,
             vertices,
             triangles,
-            bounds=tile_bounds
+            bounds=tile_bounds,
         )
+        qm_bytes = qm_buffer.getvalue()
 
         # Gzip compress
         gz_buffer = io.BytesIO()

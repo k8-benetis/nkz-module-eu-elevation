@@ -183,7 +183,9 @@ def process_tile(ds, zoom: int, col: int, row: int, max_error: float = 0.5):
         if len(tin.vertices) < 3 or len(tin.triangles) < 1:
             return None
 
-        qm = quantized_mesh_encoder.encode(tin.vertices, tin.triangles, bounds=bounds)
+        qm_buffer = io.BytesIO()
+        quantized_mesh_encoder.encode(qm_buffer, tin.vertices, tin.triangles, bounds=bounds)
+        qm = qm_buffer.getvalue()
 
         buf = io.BytesIO()
         with gzip.GzipFile(fileobj=buf, mode="wb") as gz:
