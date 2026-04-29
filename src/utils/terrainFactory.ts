@@ -48,10 +48,22 @@ function createCesiumWorldTerrain(token?: string): any {
         if (token) {
             Cesium.Ion.defaultAccessToken = token;
         }
-        return Cesium.createWorldTerrain({
-            requestVertexNormals: true,
-            requestWaterMask: false,
-        });
+        // Cesium 1.116+ removed createWorldTerrain().
+        // Use Cesium World Terrain via Ion asset ID 1 (free global 30m).
+        if (typeof Cesium.CesiumTerrainProvider?.fromIonAssetId === 'function') {
+            return Cesium.CesiumTerrainProvider.fromIonAssetId(1, {
+                requestVertexNormals: true,
+                requestWaterMask: false,
+            });
+        }
+        // Fallback for older Cesium versions
+        if (typeof Cesium.createWorldTerrain === 'function') {
+            return Cesium.createWorldTerrain({
+                requestVertexNormals: true,
+                requestWaterMask: false,
+            });
+        }
+        throw new Error('No compatible Cesium World Terrain API found (Cesium ' + (Cesium.VERSION || 'unknown') + ')');
     } catch (error) {
         console.warn('[Elevation] Cesium World Terrain failed, falling back to ellipsoid:', error);
         return new Cesium.EllipsoidTerrainProvider();
