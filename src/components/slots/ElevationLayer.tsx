@@ -86,16 +86,18 @@ export const ElevationLayer: React.FC = () => {
                 ? { type: 'custom' as const, customUrl: match.url, cesiumIonToken: tok.cesium_ion_token }
                 : { type: 'europe_copernicus' as const, cesiumIonToken: tok.cesium_ion_token, europeCopernicusUrl: getDefaultCopernicusUrl() };
         } else if (tok.provider_type === 'europe_copernicus') {
-            config = {
-                type: 'europe_copernicus',
-                cesiumIonToken: tok.cesium_ion_token, // Use tenant's token if configured
-                europeCopernicusUrl: tok.europe_copernicus_url || getDefaultCopernicusUrl(),
-            };
+            // Default — host manages terrain (IGN/IDENA). Shouldn't reach here
+            // (guarded in callers), but if it does, don't change terrain.
+            return;
         } else if (tok.provider_type === 'custom' && tok.custom_terrain_url) {
             config = { type: 'custom', customUrl: tok.custom_terrain_url };
         } else if (tok.provider_type === 'maptiler') {
             config = { type: 'maptiler', maptilerApiKey: tok.maptiler_api_key };
         } else if (tok.provider_type === 'cesium_world') {
+            if (!tok.cesium_ion_token) {
+                console.warn('[Elevation] Cesium World Terrain selected but no token configured — keeping current terrain');
+                return;
+            }
             config = { type: 'cesium_world', cesiumIonToken: tok.cesium_ion_token };
         } else {
             config = { type: 'europe_copernicus', europeCopernicusUrl: getDefaultCopernicusUrl() };
