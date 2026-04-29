@@ -58,7 +58,7 @@ export const ElevationLayer: React.FC = () => {
     const tokensRef = useRef<TerrainTokens | null>(null);
     const currentModeRef = useRef<TerrainProviderType>('off');
 
-    // Fetch tokens + layers on mount
+    // Fetch tokens + layers on mount (for reference, don't apply default provider)
     useEffect(() => {
         Promise.all([
             apiClient.get<TerrainTokens>('/preferences/tokens').catch(() => null),
@@ -66,16 +66,10 @@ export const ElevationLayer: React.FC = () => {
         ]).then(([tok, layers]) => {
             tokensRef.current = tok;
             layersRef.current = layers || [];
-            if (viewer && tok) {
-                // Delay to win the race condition with the host's async
-                // useTerrainProvider hook (which also sets viewer.terrainProvider
-                // via CesiumTerrainProvider.fromUrl().then(...)).
-                // 2 seconds is enough for the host's network fetch to complete.
-                setTimeout(() => {
-                    if (!viewer.isDestroyed()) {
-                        applyPreference(tok, layers || []);
-                    }
-                }, 2000);
+            // Only apply if the user has explicitly chosen a non-default provider.
+            // Default (europe_copernicus) means "let the host decide" (IGN/IDENA).
+            if (viewer && tok && tok.provider_type !== 'europe_copernicus') {
+                applyPreference(tok, layers || []);
             }
         });
     }, [viewer]);
@@ -201,11 +195,17 @@ export const ElevationLayer: React.FC = () => {
                     apiClient.get<TerrainTokens>('/preferences/tokens').catch(() => null),
                     apiClient.get<ElevationLayerConfig[]>('/layers').catch(() => []),
                 ]).then(([tok, layers]) => {
-                    if (tok) {
-                        tokensRef.current = tok;
-                        layersRef.current = layers || [];
-                        applyPreference(tok, layers || []);
+                    if (!tok) return;
+                    tokensRef.current = tok;
+                    layersRef.current = layers || [];
+                    if (tok.provider_type === 'europe_copernicus') {
+                        // User switched back to default — restore host terrain (IGN/IDENA).
+                        // Trigger a camera move so the host re-detects and sets terrain.
+                        const cam = viewer.camera;
+                        if (cam) viewer.camera.moveEnd.raiseEvent();
+                        return;
                     }
+                    applyPreference(tok, layers || []);
                 });
             }
         };
