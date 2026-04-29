@@ -76,6 +76,17 @@ export const ElevationLayer: React.FC = () => {
         if (!viewer) return;
         currentModeRef.current = tok.provider_type as TerrainProviderType;
 
+        // If the default provider is selected and the host already set a working
+        // terrain (non-ellipsoid), don't override it. The host's terrain may be
+        // better tuned (e.g. IGN for Spain) and our Cesium Ion token may be expired.
+        if (tok.provider_type === 'europe_copernicus' || tok.provider_type === 'auto') {
+            const current = viewer.terrainProvider;
+            if (current && !(current instanceof Cesium.EllipsoidTerrainProvider)) {
+                console.log('[Elevation] Host terrain already active, deferring to it:', current.constructor.name);
+                return;
+            }
+        }
+
         let config: TerrainProviderConfig;
 
         if (tok.provider_type === 'auto') {
