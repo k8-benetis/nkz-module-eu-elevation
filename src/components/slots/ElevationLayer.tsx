@@ -124,11 +124,23 @@ export const ElevationLayer: React.FC = () => {
 
     const setTerrainProvider = (provider: any) => {
         if (!viewer) return;
-        activeProviderRef.current = provider;
-        try {
-            viewer.terrainProvider = provider;
-        } catch (error) {
-            console.error('[Elevation] Failed to set terrain provider:', error);
+        // fromIonAssetId returns a Promise; handle both sync and async
+        if (provider && typeof provider.then === 'function') {
+            provider.then((resolved: any) => {
+                if (!viewer.isDestroyed()) {
+                    activeProviderRef.current = resolved;
+                    viewer.terrainProvider = resolved;
+                }
+            }).catch((err: any) => {
+                console.warn('[Elevation] Async terrain provider failed:', err);
+            });
+        } else {
+            activeProviderRef.current = provider;
+            try {
+                viewer.terrainProvider = provider;
+            } catch (error) {
+                console.error('[Elevation] Failed to set terrain provider:', error);
+            }
         }
     };
 

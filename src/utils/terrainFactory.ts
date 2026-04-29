@@ -44,28 +44,44 @@ export function createTerrainProvider(config: TerrainProviderConfig): any {
 }
 
 function createCesiumWorldTerrain(token?: string): any {
+    // Cesium 1.116+ uses fromIonAssetId which always reads Cesium.Ion.defaultAccessToken
+    // (the accessToken option is ignored in 1.136). We must temporarily swap the global
+    // token and restore it after the async call completes.
+    const savedToken = Cesium.Ion.defaultAccessToken;
+
+    if (token) {
+        Cesium.Ion.defaultAccessToken = token;
+    }
+
     try {
-        // NEVER set Cesium.Ion.defaultAccessToken — the host manages it globally.
-        // Changing it breaks host imagery/terrain layers. Pass token per-call instead.
         if (typeof Cesium.CesiumTerrainProvider?.fromIonAssetId === 'function') {
-            return Cesium.CesiumTerrainProvider.fromIonAssetId(1, {
-                accessToken: token || undefined,
+            const promise = Cesium.CesiumTerrainProvider.fromIonAssetId(1, {
                 requestVertexNormals: true,
                 requestWaterMask: false,
             });
+            // fromIonAssetId returns a Promise — restore token after it settles
+            if (promise && typeof promise.then === 'function') {
+                promise.then(() => {
+                    Cesium.Ion.defaultAccessToken = savedToken;
+                }).catch(() => {
+                    Cesium.Ion.defaultAccessToken = savedToken;
+                });
+            }
+            return promise;
         }
         // Fallback for older Cesium versions
         if (typeof Cesium.createWorldTerrain === 'function') {
-            if (token) {
-                Cesium.Ion.defaultAccessToken = token;
-            }
-            return Cesium.createWorldTerrain({
+            const provider = Cesium.createWorldTerrain({
                 requestVertexNormals: true,
                 requestWaterMask: false,
             });
+            Cesium.Ion.defaultAccessToken = savedToken;
+            return provider;
         }
+        Cesium.Ion.defaultAccessToken = savedToken;
         throw new Error('No compatible Cesium World Terrain API found (Cesium ' + (Cesium.VERSION || 'unknown') + ')');
     } catch (error) {
+        Cesium.Ion.defaultAccessToken = savedToken;
         console.warn('[Elevation] Cesium World Terrain failed, falling back to ellipsoid:', error);
         return new Cesium.EllipsoidTerrainProvider();
     }
