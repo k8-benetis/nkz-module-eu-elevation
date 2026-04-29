@@ -64,11 +64,11 @@ export const TerrainIngestionForm: React.FC = () => {
                 });
 
                 if (payload.status === 'SUCCESS') {
-                    setStatus({ message: `Pipeline Completed! Data is ready in MinIO.`, isError: false });
+                    setStatus({ message: t('pipelineCompleted', 'Pipeline Completed! Data is ready in MinIO.'), isError: false });
                     setLoading(false);
                     ws.close();
                 } else if (payload.status === 'FAILURE' || payload.error) {
-                    setStatus({ message: `Pipeline Failed: ${payload.message}`, isError: true });
+                    setStatus({ message: t('pipelineFailed', 'Pipeline Failed: {{message}}', { message: payload.message }), isError: true });
                     setLoading(false);
                     ws.close();
                 }
@@ -79,7 +79,7 @@ export const TerrainIngestionForm: React.FC = () => {
 
         ws.onerror = (error) => {
             console.error("WebSocket error:", error);
-            setStatus({ message: "WebSocket connection error", isError: true });
+            setStatus({ message: t('wsError', 'WebSocket connection error'), isError: true });
             setLoading(false);
             ws.close();
         };
@@ -105,10 +105,10 @@ export const TerrainIngestionForm: React.FC = () => {
             if (bbox.trim()) {
                 parsedBbox = bbox.split(',').map(s => parseFloat(s.trim()));
                 if (parsedBbox.length !== 4 || parsedBbox.some(isNaN)) {
-                    throw new Error("Invalid BBOX format. Use 'minX,minY,maxX,maxY'");
+                    throw new Error(t('errInvalidBbox', "Invalid BBOX format. Use 'minX,minY,maxX,maxY'"));
                 }
             } else if (activeTab === 'remote') {
-                throw new Error("BBOX is required for remote URLs");
+                throw new Error(t('errBboxRequired', "BBOX is required for remote URLs"));
             }
 
             let response;
