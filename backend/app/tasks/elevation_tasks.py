@@ -508,6 +508,13 @@ def process_dem_to_quantized_mesh(
             _is_fallback = True
             zoom_max = min(zoom_max, 12)
 
+            # CRITICAL: rasterio.open() runs in-process and needs these env vars
+            # to read /vsis3/ paths. gdalbuildvrt/gdalwarp got them via extra_env,
+            # but rasterio reads happen in the Python process directly.
+            os.environ["AWS_NO_SIGN_REQUEST"] = "YES"
+            os.environ["AWS_S3_ENDPOINT"] = "s3.eu-central-1.amazonaws.com"
+            os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "EMPTY_DIR"
+
         # Phase 2: Initialize MinIO client
         self.update_state(state='PROCESSING', meta={'progress': 10, 'message': 'Connecting to object storage...'})
         minio_client = _get_minio_client()
