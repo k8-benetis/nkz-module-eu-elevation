@@ -209,6 +209,16 @@ class TerrainProviderInfo(BaseModel):
 
 
 # ============================================================================
+# Health (accessible through ingress prefix path)
+# ============================================================================
+
+@router.get("/health")
+async def router_health_check():
+    """Health check accessible via ingress /api/elevation/health."""
+    return {"status": "healthy", "module": "eu-elevation", "version": "1.0.0"}
+
+
+# ============================================================================
 # DEM Source Catalog (read-only, built-in)
 # ============================================================================
 
