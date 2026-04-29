@@ -45,9 +45,11 @@ spec:
             - name: TERRAIN_WORK_DIR
               value: "/tmp/terrain_work"
             - name: ALLOWED_ORIGINS
-              # Override per-environment via overlay (e.g. gitops/overlays/eu-elevation/)
-              # Empty default disables CORS middleware (see backend/app/main.py)
-              value: ""
+              # Comma-separated list of allowed origins for CORS.
+              # The frontend host (nekazari.robotika.cloud) differs from the API host
+              # (nkz.robotika.cloud), so CORS is REQUIRED for browser requests.
+              # Override per-environment via GitOps overlay if needed.
+              value: "https://nekazari.robotika.cloud"
             - name: JWT_ISSUER
               value: "https://auth.robotika.cloud/auth/realms/nekazari"
             - name: JWKS_URL
