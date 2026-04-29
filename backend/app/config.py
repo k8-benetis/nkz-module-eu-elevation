@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     # Redis (for Celery task queue)
     REDIS_URL: str = "redis://redis:6379/0"
 
+    # Encryption key for sensitive DB columns (Fernet symmetric)
+    ELEVATION_ENCRYPTION_KEY: str = os.getenv("ELEVATION_ENCRYPTION_KEY", "")
+
     # MinIO / S3 Storage — NO hardcoded credentials (public repo)
     MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "minio:9000")
     MINIO_ACCESS_KEY: str = os.getenv("MINIO_ACCESS_KEY", "")

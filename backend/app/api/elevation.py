@@ -22,6 +22,7 @@ from app.middleware.auth import require_auth, get_tenant_id
 from app.tasks.elevation_tasks import process_dem_to_quantized_mesh, process_local_dem_to_quantized_mesh
 from app.dem_sources import get_source, get_all_sources
 from app.config import settings
+from app.common.crypto import encrypt_token, decrypt_token
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.elevation_models import ElevationLayer, CustomDemSource, TenantTerrainPreferences
@@ -321,7 +322,7 @@ async def create_custom_source(
         bbox_maxx=source_in.bbox_maxx,
         bbox_maxy=source_in.bbox_maxy,
         auth_header_name=source_in.auth_header_name,
-        auth_header_value=source_in.auth_header_value,
+        auth_header_value=encrypt_token(source_in.auth_header_value) if source_in.auth_header_value else None,
         notes=source_in.notes,
     )
     db.add(new_source)
@@ -657,8 +658,8 @@ async def get_tokens(
     if not prefs:
         return TerrainTokensResponse()
     return TerrainTokensResponse(
-        cesium_ion_token=prefs.cesium_ion_token,
-        maptiler_api_key=prefs.maptiler_api_key,
+        cesium_ion_token=decrypt_token(prefs.cesium_ion_token or ""),
+        maptiler_api_key=decrypt_token(prefs.maptiler_api_key or ""),
         custom_terrain_url=prefs.custom_terrain_url,
         europe_copernicus_url=settings.EU_COPERNICUS_TERRAIN_URL,
         provider_type=prefs.provider_type,
@@ -684,9 +685,9 @@ async def update_preferences(
     if prefs_in.provider_type is not None:
         prefs.provider_type = prefs_in.provider_type
     if prefs_in.cesium_ion_token is not None:
-        prefs.cesium_ion_token = prefs_in.cesium_ion_token
+        prefs.cesium_ion_token = encrypt_token(prefs_in.cesium_ion_token)
     if prefs_in.maptiler_api_key is not None:
-        prefs.maptiler_api_key = prefs_in.maptiler_api_key
+        prefs.maptiler_api_key = encrypt_token(prefs_in.maptiler_api_key)
     if prefs_in.custom_terrain_url is not None:
         prefs.custom_terrain_url = prefs_in.custom_terrain_url
     if prefs_in.auto_mode is not None:
