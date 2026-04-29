@@ -253,15 +253,16 @@ DEM_SOURCES: list[DEMSource] = [
     # -------------------------------------------------------------------------
     DEMSource(
         country_code="EU",
-        country_name="Pan-European (EuroDEM)",
-        service_url="https://copernicus-dem-30m.s3.amazonaws.com/",
+        country_name="Pan-European (Copernicus DEM 30m)",
+        service_url="/vsis3/copernicus-dem-30m",
         service_type="DOWNLOAD",
         format="GeoTIFF",
         resolution="30m",
         bbox=(-32.0, 27.0, 45.0, 72.0),
         fallback=True,
-        notes="Copernicus GLO-30 DEM. Cobertura pan-europea como fallback. "
-              "EuroGeographics EuroDEM (OME2) para 1:100k"
+        notes="Copernicus GLO-30 DEM via AWS S3 (no auth). GDAL access requires "
+              "AWS_NO_SIGN_REQUEST=YES and AWS_S3_ENDPOINT=s3.amazonaws.com. "
+              "Tiles are 1°×1° COG files. Use scripts/ingest_copernicus_eu.py for batch ingestion."
     ),
 ]
 

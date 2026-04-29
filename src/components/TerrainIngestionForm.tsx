@@ -10,7 +10,7 @@ export const TerrainIngestionForm: React.FC = () => {
     const { getToken, getTenantId } = useAuth();
 
     const apiClient = useMemo(() => new NKZClient({
-        baseUrl: '',
+        baseUrl: '/api/elevation',
         getToken,
         getTenantId
     }), [getToken, getTenantId]);
@@ -23,13 +23,25 @@ export const TerrainIngestionForm: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [customSources, setCustomSources] = useState<any[]>([]);
     const [catalogSources, setCatalogSources] = useState<any[]>([]);
+    const [urlsOrigin, setUrlsOrigin] = useState<'manual' | 'catalog' | 'custom'>('manual');
+
+    const switchTab = (tab: 'remote' | 'local') => {
+        if (tab === activeTab) return;
+        setActiveTab(tab);
+        setBbox('');
+        setUrls('');
+        setLocalFile(null);
+        setStatus(null);
+        setProgress(null);
+        setUrlsOrigin('manual');
+    };
 
     useEffect(() => {
-        apiClient.get('/api/elevation/sources/custom').then((res: any) => {
+        apiClient.get('/sources/custom').then((res: any) => {
             if (Array.isArray(res)) setCustomSources(res);
         }).catch(console.error);
 
-        apiClient.get('/api/elevation/sources/catalog').then((res: any) => {
+        apiClient.get('/sources/catalog').then((res: any) => {
             if (Array.isArray(res)) setCatalogSources(res);
         }).catch(console.error);
     }, [apiClient]);
@@ -66,6 +78,9 @@ export const TerrainIngestionForm: React.FC = () => {
                 if (payload.status === 'SUCCESS') {
                     setStatus({ message: t('pipelineCompleted', 'Pipeline Completed! Data is ready in MinIO.'), isError: false });
                     setLoading(false);
+                    window.dispatchEvent(new CustomEvent('nkz.elevation.change', {
+                        detail: { mode: 'refresh', source: 'ingest-complete', jobId }
+                    }));
                     ws.close();
                 } else if (payload.status === 'FAILURE' || payload.error) {
                     setStatus({ message: t('pipelineFailed', 'Pipeline Failed: {{message}}', { message: payload.message }), isError: true });
@@ -118,7 +133,7 @@ export const TerrainIngestionForm: React.FC = () => {
                     throw new Error(t('errNoSource', "Provide at least one source URL"));
                 }
 
-                response = await apiClient.post('/api/elevation/ingest', {
+                response = await apiClient.post('/ingest', {
                     country_code: countryCode,
                     bbox: parsedBbox as [number, number, number, number],
                     source_urls: parsedUrls
@@ -139,6 +154,8 @@ export const TerrainIngestionForm: React.FC = () => {
                 if (token) headers.set('Authorization', `Bearer ${token}`);
                 if (tenant) headers.set('X-Tenant-ID', tenant);
 
+                // NOTE: raw fetch (not NKZClient) — multipart boundary requires
+                // letting the browser set Content-Type. Path is absolute by design.
                 const res = await fetch('/api/elevation/upload', {
                     method: 'POST',
                     headers,
@@ -177,13 +194,15 @@ export const TerrainIngestionForm: React.FC = () => {
 
             <div className="flex space-x-2 border-b border-gray-200 pb-2">
                 <button
-                    onClick={() => setActiveTab('remote')}
+                    type="button"
+                    onClick={() => switchTab('remote')}
                     className={`px-3 py-1 text-sm font-medium rounded transition-colors ${activeTab === 'remote' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                 >
                     {t('remoteUrlsTab', 'Remote URLs')}
                 </button>
                 <button
-                    onClick={() => setActiveTab('local')}
+                    type="button"
+                    onClick={() => switchTab('local')}
                     className={`px-3 py-1 text-sm font-medium rounded transition-colors ${activeTab === 'local' ? 'bg-blue-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                 >
                     {t('localUploadTab', 'Local File Upload')}
@@ -232,6 +251,7 @@ export const TerrainIngestionForm: React.FC = () => {
                                             setCountryCode(src.country_code);
                                             setBbox(`${src.bbox[0]}, ${src.bbox[1]}, ${src.bbox[2]}, ${src.bbox[3]}`);
                                             setUrls(src.service_url);
+                                            setUrlsOrigin('catalog');
                                         }
                                     }}
                                 >
@@ -253,6 +273,7 @@ export const TerrainIngestionForm: React.FC = () => {
                                                 setBbox(`${src.bbox_minx}, ${src.bbox_miny}, ${src.bbox_maxx}, ${src.bbox_maxy}`);
                                             }
                                             setUrls(src.service_url);
+                                            setUrlsOrigin('custom');
                                         }
                                     }}
                                 >
@@ -264,10 +285,17 @@ export const TerrainIngestionForm: React.FC = () => {
                             </div>
                         </div>
                         <div className="space-y-1">
-                            <label className="text-xs font-medium text-gray-600">{t('sourceUrlsLabel', 'Source URLs (One per line)')}</label>
+                            <label className="text-xs font-medium text-gray-600 flex items-center gap-2">
+                                <span>{t('sourceUrlsLabel', 'Source URLs (One per line)')}</span>
+                                {urlsOrigin !== 'manual' && (
+                                    <span className="text-[10px] uppercase tracking-wide bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                                        {urlsOrigin === 'catalog' ? t('fromCatalog', 'from catalog') : t('fromCustom', 'from custom source')}
+                                    </span>
+                                )}
+                            </label>
                             <textarea
                                 value={urls}
-                                onChange={(e) => setUrls(e.target.value)}
+                                onChange={(e) => { setUrlsOrigin('manual'); setUrls(e.target.value); }}
                                 placeholder="https://server/wcs?request=GetCoverage..."
                                 rows={3}
                                 className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-800 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-shadow font-mono"
@@ -305,7 +333,15 @@ export const TerrainIngestionForm: React.FC = () => {
                 <div className="mt-4 flex flex-col space-y-3">
                     {status && (
                         <div className={`p-3 rounded-lg text-sm border ${status.isError ? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
-                            {status.message}
+                            <div>{status.message}</div>
+                            {!status.isError && progress?.percent === 100 && (
+                                <a
+                                    href="/entities"
+                                    className="inline-flex items-center gap-1 mt-2 text-xs font-semibold text-green-800 hover:underline"
+                                >
+                                    {t('viewOnMap', 'View on Map')} →
+                                </a>
+                            )}
                         </div>
                     )}
 

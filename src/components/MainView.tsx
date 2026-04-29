@@ -4,7 +4,7 @@ import { CustomDemSourceForm } from './CustomDemSourceForm';
 import { ElevationAdminControl } from './slots/ElevationAdminControl';
 import { Trash2, Plus, RefreshCw, Layers, Map as MapIcon, ArrowRight, Settings } from 'lucide-react';
 import { useAuth, NKZClient, useTranslation } from '@nekazari/sdk';
-import { Link } from 'react-router-dom';
+
 
 export interface ElevationLayer {
     id: string;
@@ -77,6 +77,17 @@ export const MainView: React.FC = () => {
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        try {
+            const u = new URL(newUrl);
+            if (!/^https?:$/.test(u.protocol)) {
+                throw new Error('protocol');
+            }
+        } catch {
+            window.alert(t('errInvalidUrl', 'Invalid URL — must start with http:// or https://'));
+            return;
+        }
+
         let bboxArgs = {};
         if (newBbox.trim()) {
             const parts = newBbox.split(',').map(s => parseFloat(s.trim()));
@@ -96,6 +107,7 @@ export const MainView: React.FC = () => {
     const activeProviderName = useMemo(() => {
         if (!prefs) return '...';
         if (prefs.provider_type === 'auto') return t('autoMode', 'Auto (Camera Match)');
+        if (prefs.provider_type === 'europe_copernicus') return t('europeCopernicus', 'Copernicus EU Terrain');
         if (prefs.provider_type === 'cesium_world') return 'Cesium World Terrain';
         if (prefs.provider_type === 'maptiler') return 'MapTiler Terrain';
         if (prefs.provider_type === 'custom') {
@@ -125,14 +137,14 @@ export const MainView: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                    <Link 
-                        to="/entities" 
+                    <a
+                        href="/entities"
                         className="flex items-center justify-center gap-2 bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-xl font-medium transition-all shadow-md active:scale-95 shrink-0"
                     >
                         <MapIcon className="w-4 h-4" />
                         {t('viewOnMap', 'View on Map')}
                         <ArrowRight className="w-4 h-4 ml-1 opacity-50" />
-                    </Link>
+                    </a>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

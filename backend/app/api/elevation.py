@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from app.middleware.auth import require_auth, get_tenant_id
 from app.tasks.elevation_tasks import process_dem_to_quantized_mesh, process_local_dem_to_quantized_mesh
 from app.dem_sources import get_source, get_all_sources
+from app.config import settings
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.elevation_models import ElevationLayer, CustomDemSource, TenantTerrainPreferences
@@ -35,6 +36,15 @@ router = APIRouter()
 # ============================================================================
 
 BUILTIN_PROVIDERS = [
+    {
+        "id": "builtin_europe_copernicus",
+        "name": "Copernicus EU Terrain",
+        "type": "europe_copernicus",
+        "description": "Free European 30m terrain from Copernicus GLO-30 — no API key needed",
+        "resolution": "30m",
+        "coverage": "EU + UK",
+        "requires_token": False,
+    },
     {
         "id": "builtin_cesium_world",
         "name": "Cesium World Terrain",
@@ -162,7 +172,7 @@ class CustomDemSourceResponse(BaseModel):
 
 
 class TerrainPreferencesUpdate(BaseModel):
-    provider_type: str = Field("off", description="off, cesium_world, maptiler, custom, auto")
+    provider_type: str = Field("europe_copernicus", description="off, europe_copernicus, cesium_world, maptiler, custom, auto")
     cesium_ion_token: Optional[str] = None
     maptiler_api_key: Optional[str] = None
     custom_terrain_url: Optional[str] = None
@@ -171,7 +181,7 @@ class TerrainPreferencesUpdate(BaseModel):
 
 class TerrainPreferencesResponse(BaseModel):
     tenant_id: str
-    provider_type: str
+    provider_type: str = "europe_copernicus"
     has_cesium_token: bool = False
     has_maptiler_key: bool = False
     custom_terrain_url: Optional[str] = None
@@ -183,7 +193,8 @@ class TerrainTokensResponse(BaseModel):
     cesium_ion_token: Optional[str] = None
     maptiler_api_key: Optional[str] = None
     custom_terrain_url: Optional[str] = None
-    provider_type: str = "off"
+    europe_copernicus_url: Optional[str] = None
+    provider_type: str = "europe_copernicus"
 
 
 class TerrainProviderInfo(BaseModel):
@@ -453,6 +464,31 @@ async def get_job_status(job_id: str, current_user: dict = Depends(require_auth)
 @router.websocket("/ws/status/{job_id}")
 async def websocket_job_status(websocket: WebSocket, job_id: str):
     await websocket.accept()
+
+    # Authenticate via nkz_token cookie (WebSocket doesn't support custom headers)
+    token = websocket.cookies.get("nkz_token")
+    if not token:
+        await websocket.close(code=4001, reason="Missing auth token")
+        return
+    try:
+        from jose import jwt, jwk, JWTError
+        from app.middleware.auth import JWT_ISSUER, JWT_AUDIENCE, get_jwks_client
+        unverified_header = jwt.get_unverified_header(token)
+        kid = unverified_header.get("kid")
+        if not kid:
+            await websocket.close(code=4001, reason="Token missing key ID")
+            return
+        jwks_client = get_jwks_client()
+        key_data = jwks_client.get_signing_key(kid)
+        public_key = jwk.construct(key_data)
+        jwt.decode(token, public_key, algorithms=["RS256"], audience=JWT_AUDIENCE, issuer=JWT_ISSUER)
+    except JWTError as e:
+        await websocket.close(code=4001, reason=f"Invalid token: {e}")
+        return
+    except Exception as e:
+        await websocket.close(code=4001, reason="Auth failed")
+        return
+
     from celery.result import AsyncResult
     from app.worker import celery_app
     task_result = AsyncResult(job_id, app=celery_app)
@@ -549,7 +585,7 @@ async def list_providers(
     prefs = db.query(TenantTerrainPreferences).filter(
         TenantTerrainPreferences.tenant_id == tenant_id,
     ).first()
-    active_type = prefs.provider_type if prefs else "off"
+    active_type = prefs.provider_type if prefs else "europe_copernicus"
 
     providers = []
     for bp in BUILTIN_PROVIDERS:
@@ -614,6 +650,7 @@ async def get_tokens(
         cesium_ion_token=prefs.cesium_ion_token,
         maptiler_api_key=prefs.maptiler_api_key,
         custom_terrain_url=prefs.custom_terrain_url,
+        europe_copernicus_url=settings.EU_COPERNICUS_TERRAIN_URL,
         provider_type=prefs.provider_type,
     )
 
