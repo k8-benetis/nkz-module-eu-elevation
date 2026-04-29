@@ -10,3 +10,5 @@ dist/
 *.md
 !README.md
 !LICENSE
+!CURRENT_STATE.md
+!CHANGELOG.md
