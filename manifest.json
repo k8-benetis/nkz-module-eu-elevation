@@ -60,11 +60,29 @@
   "_comment_slots": "=== VIEWER & DASHBOARD INTEGRATION ===",
   "slots": {
     "_comment": "Define widgets that integrate into the Unified Viewer (/entities) and Dashboard",
-    "layer-toggle": [],
-    "context-panel": [],
+    "layer-toggle": [
+      {
+        "id": "clc-layer-toggle",
+        "priority": 30,
+        "component": "CorineLandCoverToggle"
+      }
+    ],
+    "context-panel": [
+      {
+        "id": "elevation-context-control",
+        "priority": 50,
+        "component": "ElevationAdminControl"
+      }
+    ],
     "bottom-panel": [],
     "entity-tree": [],
-    "map-layer": [],
+    "map-layer": [
+      {
+        "id": "elevation-cesium-layer",
+        "priority": 10,
+        "component": "ElevationLayer"
+      }
+    ],
     "dashboard-widget": []
   },
   "_comment_metadata": "=== ADDITIONAL METADATA ===",

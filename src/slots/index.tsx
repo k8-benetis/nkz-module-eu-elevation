@@ -30,8 +30,8 @@ export type ModuleViewerSlots = Record<SlotType, SlotWidgetDefinition[]> & {
  * Slot allocation:
  * - map-layer: Injects terrain provider into Cesium (invisible to user)
  * - layer-toggle: Simple CORINE Land Cover toggle with opacity slider
- * - dashboard-widget: Full terrain configuration panel (providers, BYOK, ingestion)
- * - context-panel: Empty (avoid duplication with dashboard-widget)
+ * - context-panel: Full terrain configuration panel (providers, BYOK, ingestion)
+ * - dashboard-widget: Empty (consolidated into module page and context-panel)
  */
 export const moduleSlots: ModuleViewerSlots = {
   // 1. Inject the Terrain Provider into the Cesium map
@@ -56,10 +56,10 @@ export const moduleSlots: ModuleViewerSlots = {
     }
   ],
 
-  // 3. Full terrain configuration panel (providers, BYOK, ingestion)
-  'dashboard-widget': [
+  // 3. Context panel integration for the map viewer
+  'context-panel': [
     {
-      id: 'elevation-admin-control',
+      id: 'elevation-context-control',
       moduleId: MODULE_ID,
       component: 'ElevationAdminControl',
       priority: 50,
@@ -67,8 +67,8 @@ export const moduleSlots: ModuleViewerSlots = {
     }
   ],
 
-  // Unused — avoids duplication with dashboard-widget
-  'context-panel': [],
+  // Consistently removed from dashboard to avoid fragmentation
+  'dashboard-widget': [],
   'bottom-panel': [],
   'entity-tree': []
 };
