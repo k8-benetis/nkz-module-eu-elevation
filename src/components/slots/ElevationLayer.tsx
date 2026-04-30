@@ -74,8 +74,12 @@ export const ElevationLayer: React.FC = () => {
         });
     }, [viewer]);
 
+    const lastAppliedRef = useRef<string>('');
+
     const applyPreference = useCallback((tok: TerrainTokens, layers: ElevationLayerConfig[]) => {
         if (!viewer) return;
+        if (applyingRef.current) return; // Don't stack async terrain changes
+
         currentModeRef.current = tok.provider_type as TerrainProviderType;
 
         let config: TerrainProviderConfig;
@@ -103,6 +107,11 @@ export const ElevationLayer: React.FC = () => {
             config = { type: 'europe_copernicus', europeCopernicusUrl: getDefaultCopernicusUrl() };
         }
 
+        // Skip if same provider type already applied (prevents flicker loops)
+        if (lastAppliedRef.current === tok.provider_type) return;
+        lastAppliedRef.current = tok.provider_type;
+
+        console.log('[Elevation] Applying terrain:', tok.provider_type);
         const provider = createTerrainProvider(config);
         setTerrainProvider(provider);
     }, [viewer]);
@@ -122,16 +131,23 @@ export const ElevationLayer: React.FC = () => {
         }
     };
 
+    const applyingRef = useRef(false);
+
     const setTerrainProvider = (provider: any) => {
         if (!viewer) return;
-        // fromIonAssetId returns a Promise; handle both sync and async
+        // Don't stack multiple async terrain changes — cause of black flashes
+        if (applyingRef.current) return;
+
         if (provider && typeof provider.then === 'function') {
+            applyingRef.current = true;
             provider.then((resolved: any) => {
+                applyingRef.current = false;
                 if (!viewer.isDestroyed()) {
                     activeProviderRef.current = resolved;
                     viewer.terrainProvider = resolved;
                 }
             }).catch((err: any) => {
+                applyingRef.current = false;
                 console.warn('[Elevation] Async terrain provider failed:', err);
             });
         } else {
@@ -213,8 +229,8 @@ export const ElevationLayer: React.FC = () => {
                     tokensRef.current = tok;
                     layersRef.current = layers || [];
                     if (tok.provider_type === 'europe_copernicus') {
-                        // User switched back to default — restore host terrain (IGN/IDENA).
-                        // Trigger a camera move so the host re-detects and sets terrain.
+                        // User switched back to default — restore host terrain.
+                        lastAppliedRef.current = '';
                         const cam = viewer.camera;
                         if (cam) viewer.camera.moveEnd.raiseEvent();
                         return;
