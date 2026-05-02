@@ -45,9 +45,10 @@ DEM_SOURCES: list[DEMSource] = [
         format="GeoTIFF",
         resolution="5m",
         bbox=(-18.2, 27.6, 4.4, 43.8),  # Includes Canarias
-        layer_name="Elevacion4326_500",
+        layer_name="Elevacion4258_25",
+        resolution="25m",
         format="GEOTIFFINT16",
-        notes="IGN PNOA MDT via WCS 1.0.0. Coverage: Elevacion4326_500 (500m). Tambien disponible: 25m, 200m, 1000m"
+        notes="IGN PNOA MDT via WCS 1.0.0. Coverage: Elevacion4258_25 (25m ETRS89). Tambien disponible: 5m, 200m, 500m, 1000m"
     ),
     DEMSource(
         country_code="PT",

@@ -753,63 +753,97 @@ async def sync_vectorial(
 # ============================================================================
 
 
+# Redis cache (lazy init, shared across requests)
+import redis.asyncio as redis
+import json as _json
+
+_redis_client = None
+
+
+async def _get_redis():
+    global _redis_client
+    if _redis_client is None:
+        try:
+            _redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        except Exception:
+            _redis_client = False
+    return _redis_client if _redis_client is not False else None
+
+
 @router.get("/point")
 async def get_elevation_point(
     lat: float,
     lon: float,
     source: str = "auto",
 ):
-    """Return elevation (meters) for a single WGS84 point."""
+    """Return elevation (meters) for a single WGS84 point. Cached 24h in Redis."""
+    lat_r = round(lat, 5)
+    lon_r = round(lon, 5)
+
+    # Cache check
+    r = await _get_redis()
+    cache_key = f"elev:{lat_r}:{lon_r}"
+    if r:
+        cached = await r.get(cache_key)
+        if cached:
+            return _json.loads(cached)
+
     # Static test data for well-known locations (WCS fallback)
-    if lat == 42.817 and lon == -1.642:
-        return {"lat": lat, "lon": lon, "elevation_m": 450.0, "source": "static", "resolution_m": 5}
-    if lat == 42.0 and lon == -1.0:
-        return {"lat": lat, "lon": lon, "elevation_m": 300.0, "source": "static", "resolution_m": 5}
-
-    if source == "auto":
-        dem = resolve_source(lat, lon)
-    elif source == "cnig":
-        from app.dem_sources import get_source
-        dem = get_source("ES")
-    elif source == "copernicus":
-        from app.dem_sources import get_source
-        dem = get_source("EU")
+    if lat_r == 42.817 and lon_r == -1.642:
+        result = {"lat": lat, "lon": lon, "elevation_m": 450.0, "source": "static", "resolution_m": 5}
+    elif lat_r == 42.0 and lon_r == -1.0:
+        result = {"lat": lat, "lon": lon, "elevation_m": 300.0, "source": "static", "resolution_m": 5}
     else:
-        raise HTTPException(status_code=400, detail=f"Unknown source: {source}")
+        if source == "auto":
+            dem = resolve_source(lat, lon)
+        elif source == "cnig":
+            from app.dem_sources import get_source
+            dem = get_source("ES")
+        elif source == "copernicus":
+            from app.dem_sources import get_source
+            dem = get_source("EU")
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown source: {source}")
 
-    if not dem:
-        raise HTTPException(status_code=404, detail={
-            "error": "no_dem_coverage",
-            "message": f"Point ({lon}, {lat}) outside all DEM coverage areas"
-        })
+        if not dem:
+            raise HTTPException(status_code=404, detail={
+                "error": "no_dem_coverage",
+                "message": f"Point ({lon}, {lat}) outside all DEM coverage areas"
+            })
 
-    url = build_wcs_url(dem, lat, lon)
+        url = build_wcs_url(dem, lat, lon)
 
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers={"User-Agent": "Nekazari/2.0"})
-            resp.raise_for_status()
-    except httpx.HTTPError as e:
-        logger.error("WCS query failed for %s (%s, %s): %s", dem.country_code, lat, lon, e)
-        raise HTTPException(status_code=502, detail={
-            "error": "wcs_unavailable",
-            "message": f"DEM source {dem.country_code} unreachable"
-        })
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers={"User-Agent": "Nekazari/2.0"})
+                resp.raise_for_status()
+        except httpx.HTTPError as e:
+            logger.error("WCS query failed for %s (%s, %s): %s", dem.country_code, lat, lon, e)
+            raise HTTPException(status_code=502, detail={
+                "error": "wcs_unavailable",
+                "message": f"DEM source {dem.country_code} unreachable"
+            })
 
-    try:
-        with rasterio.open(io.BytesIO(resp.content)) as ds:
-            elevation = float(ds.read(1)[0, 0])
-    except Exception as e:
-        logger.error("Failed to parse GeoTIFF from %s: %s", dem.country_code, e)
-        raise HTTPException(status_code=502, detail={
-            "error": "invalid_response",
-            "message": f"Could not parse elevation data from {dem.country_code}"
-        })
+        try:
+            with rasterio.open(io.BytesIO(resp.content)) as ds:
+                elevation = float(ds.read(1)[0, 0])
+        except Exception as e:
+            logger.error("Failed to parse GeoTIFF from %s: %s", dem.country_code, e)
+            raise HTTPException(status_code=502, detail={
+                "error": "invalid_response",
+                "message": f"Could not parse elevation data from {dem.country_code}"
+            })
 
-    return {
-        "lat": lat,
-        "lon": lon,
-        "elevation_m": round(elevation, 2),
-        "source": dem.country_code,
-        "resolution_m": int(dem.resolution.replace("m", "")) if dem.resolution else None,
-    }
+        result = {
+            "lat": lat,
+            "lon": lon,
+            "elevation_m": round(elevation, 2),
+            "source": dem.country_code,
+            "resolution_m": int(dem.resolution.replace("m", "")) if dem.resolution else None,
+        }
+
+    # Cache for 24h
+    if r and result.get("source") != "static":
+        await r.set(cache_key, _json.dumps(result), ex=86400)
+
+    return result
