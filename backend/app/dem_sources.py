@@ -42,12 +42,10 @@ DEM_SOURCES: list[DEMSource] = [
         country_name="España",
         service_url="https://servicios.idee.es/wcs-inspire/mdt",
         service_type="WCS",
-        format="GeoTIFF",
-        resolution="5m",
+        format="GEOTIFFINT16",
+        resolution="25m",
         bbox=(-18.2, 27.6, 4.4, 43.8),  # Includes Canarias
         layer_name="Elevacion4258_25",
-        resolution="25m",
-        format="GEOTIFFINT16",
         notes="IGN PNOA MDT via WCS 1.0.0. Coverage: Elevacion4258_25 (25m ETRS89). Tambien disponible: 5m, 200m, 500m, 1000m"
     ),
     DEMSource(
