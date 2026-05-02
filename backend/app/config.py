@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     # Database (PostgreSQL) — NO hardcoded credentials (public repo)
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 
-    # Redis (for Celery task queue)
-    REDIS_URL: str = "redis://redis:6379/0"
+    # Redis (for Celery task queue + elevation point cache)
+    REDIS_URL: str = "redis://redis-service:6379/0"
 
     # Encryption key for sensitive DB columns (Fernet symmetric)
     ELEVATION_ENCRYPTION_KEY: str = os.getenv("ELEVATION_ENCRYPTION_KEY", "")
