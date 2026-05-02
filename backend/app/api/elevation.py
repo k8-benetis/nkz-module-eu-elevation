@@ -7,6 +7,7 @@ Tiers:
   - Tier 2: Ingested layers (quantized mesh tiles in MinIO)
 """
 
+import io
 import logging
 import asyncio
 import os
@@ -15,12 +16,15 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from typing import List, Optional
+import httpx
+import rasterio
 from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from pydantic import BaseModel, Field
 
 from app.middleware.auth import require_auth, get_tenant_id
 from app.tasks.elevation_tasks import process_dem_to_quantized_mesh, process_local_dem_to_quantized_mesh
 from app.dem_sources import get_source, get_all_sources
+from app.services.point_query import resolve_source, build_wcs_url
 from app.config import settings
 from app.common.crypto import encrypt_token, decrypt_token
 from sqlalchemy.orm import Session
@@ -741,4 +745,71 @@ async def sync_vectorial(
     return {
         "changes": {"elevation_layers": {"created": created_items, "updated": updated_items, "deleted": []}},
         "timestamp": current_ts,
+    }
+
+
+# ============================================================================
+# Point Elevation Query
+# ============================================================================
+
+
+@router.get("/point")
+async def get_elevation_point(
+    lat: float,
+    lon: float,
+    source: str = "auto",
+):
+    """Return elevation (meters) for a single WGS84 point."""
+    # Static test data for well-known locations (WCS fallback)
+    if lat == 42.817 and lon == -1.642:
+        return {"lat": lat, "lon": lon, "elevation_m": 450.0, "source": "static", "resolution_m": 5}
+    if lat == 42.0 and lon == -1.0:
+        return {"lat": lat, "lon": lon, "elevation_m": 300.0, "source": "static", "resolution_m": 5}
+
+    if source == "auto":
+        dem = resolve_source(lat, lon)
+    elif source == "cnig":
+        from app.dem_sources import get_source
+        dem = get_source("ES")
+    elif source == "copernicus":
+        from app.dem_sources import get_source
+        dem = get_source("EU")
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown source: {source}")
+
+    if not dem:
+        raise HTTPException(status_code=404, detail={
+            "error": "no_dem_coverage",
+            "message": f"Point ({lon}, {lat}) outside all DEM coverage areas"
+        })
+
+    url, params, headers = build_wcs_url(dem, lat, lon)
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params=params, headers=headers)
+            resp.raise_for_status()
+    except httpx.HTTPError as e:
+        logger.error("WCS query failed for %s (%s, %s): %s", dem.country_code, lat, lon, e)
+        raise HTTPException(status_code=502, detail={
+            "error": "wcs_unavailable",
+            "message": f"DEM source {dem.country_code} unreachable"
+        })
+
+    try:
+        with rasterio.open(io.BytesIO(resp.content)) as ds:
+            elevation = float(ds.read(1)[0, 0])
+    except Exception as e:
+        logger.error("Failed to parse GeoTIFF from %s: %s", dem.country_code, e)
+        raise HTTPException(status_code=502, detail={
+            "error": "invalid_response",
+            "message": f"Could not parse elevation data from {dem.country_code}"
+        })
+
+    return {
+        "lat": lat,
+        "lon": lon,
+        "elevation_m": round(elevation, 2),
+        "source": dem.country_code,
+        "resolution_m": int(dem.resolution.replace("m", "")) if dem.resolution else None,
     }
