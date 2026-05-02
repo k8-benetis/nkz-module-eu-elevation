@@ -47,7 +47,12 @@ def _build_wcs_1_0(source: DEMSource, lat: float, lon: float, params: dict) -> s
     crs = params.get("CRS", "EPSG:4326")
     coverage_param = params.get("COVERAGE_PARAM", "COVERAGE")
     coverage = source.layer_name or "elevation"
-    bbox = f"{lon},{lat},{lon},{lat}"  # 1x1 pixel = same corner
+    try:
+        res_m = float(source.resolution.replace("m", ""))
+    except (ValueError, AttributeError):
+        res_m = 500.0
+    half = res_m / 111320.0 / 2.0  # degrees for half a pixel
+    bbox = f"{lon - half},{lat - half},{lon + half},{lat + half}"
 
     url = (
         f"{source.service_url}?"
