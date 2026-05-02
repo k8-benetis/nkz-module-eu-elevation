@@ -764,10 +764,28 @@ async def _get_redis():
     global _redis_client
     if _redis_client is None:
         try:
-            _redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+            _redis_client = redis.from_url(
+                settings.REDIS_URL, decode_responses=True,
+                socket_connect_timeout=2, socket_timeout=2,
+            )
         except Exception:
             _redis_client = False
     return _redis_client if _redis_client is not False else None
+
+
+async def _cache_get(r, key: str) -> dict | None:
+    try:
+        val = await r.get(key)
+        return _json.loads(val) if val else None
+    except Exception:
+        return None
+
+
+async def _cache_set(r, key: str, value: dict, ttl: int = 86400):
+    try:
+        await r.set(key, _json.dumps(value), ex=ttl)
+    except Exception:
+        pass
 
 
 @router.get("/point")
@@ -784,9 +802,9 @@ async def get_elevation_point(
     r = await _get_redis()
     cache_key = f"elev:{lat_r}:{lon_r}"
     if r:
-        cached = await r.get(cache_key)
+        cached = await _cache_get(r, cache_key)
         if cached:
-            return _json.loads(cached)
+            return cached
 
     # Static test data for well-known locations (WCS fallback)
     if lat_r == 42.817 and lon_r == -1.642:
@@ -842,8 +860,8 @@ async def get_elevation_point(
             "resolution_m": int(dem.resolution.replace("m", "")) if dem.resolution else None,
         }
 
-    # Cache for 24h
+    # Cache for 24h (non-fatal if Redis is down)
     if r and result.get("source") != "static":
-        await r.set(cache_key, _json.dumps(result), ex=86400)
+        await _cache_set(r, cache_key, result)
 
     return result
