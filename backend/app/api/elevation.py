@@ -783,11 +783,11 @@ async def get_elevation_point(
             "message": f"Point ({lon}, {lat}) outside all DEM coverage areas"
         })
 
-    url, params, headers = build_wcs_url(dem, lat, lon)
+    url = build_wcs_url(dem, lat, lon)
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params, headers=headers)
+            resp = await client.get(url, headers={"User-Agent": "Nekazari/2.0"})
             resp.raise_for_status()
     except httpx.HTTPError as e:
         logger.error("WCS query failed for %s (%s, %s): %s", dem.country_code, lat, lon, e)

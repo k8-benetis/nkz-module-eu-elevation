@@ -4,6 +4,18 @@ from app.dem_sources import DEM_SOURCES, DEMSource
 
 logger = logging.getLogger(__name__)
 
+# Known-good WCS 1.0.0 parameters per country
+WCS_PARAMS: dict[str, dict] = {
+    "ES": {
+        "VERSION": "1.0.0",
+        "FORMAT": "GEOTIFFINT16",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGE",
+        "BBOX_ORDER": "lonlat",  # lon,lat in BBOX
+    },
+    # Default: WCS 2.0.1
+}
+
 
 def resolve_source(lat: float, lon: float) -> DEMSource | None:
     """Find the first DEM source whose bbox contains the query point."""
@@ -14,24 +26,61 @@ def resolve_source(lat: float, lon: float) -> DEMSource | None:
     return None
 
 
-def build_wcs_url(source: DEMSource, lat: float, lon: float) -> tuple[str, dict, dict]:
-    """Build WCS GetCoverage URL, params, and headers for a point query."""
+def build_wcs_url(source: DEMSource, lat: float, lon: float) -> str:
+    """Build a WCS GetCoverage URL for a single-pixel query.
+
+    Uses WCS 1.0.0 for known-compatible sources (ES), WCS 2.0.1 otherwise.
+    Returns the full URL string.
+    """
+    params = WCS_PARAMS.get(source.country_code, {})
+    version = params.get("VERSION", "2.0.1")
+
+    if version == "1.0.0":
+        return _build_wcs_1_0(source, lat, lon, params)
+    else:
+        return _build_wcs_2_0(source, lat, lon, params)
+
+
+def _build_wcs_1_0(source: DEMSource, lat: float, lon: float, params: dict) -> str:
+    """WCS 1.0.0 GetCoverage: simple BBOX + CRS + FORMAT."""
+    fmt = params.get("FORMAT", source.format)
+    crs = params.get("CRS", "EPSG:4326")
+    coverage_param = params.get("COVERAGE_PARAM", "COVERAGE")
+    coverage = source.layer_name or "elevation"
+    bbox = f"{lon},{lat},{lon},{lat}"  # 1x1 pixel = same corner
+
+    url = (
+        f"{source.service_url}?"
+        f"SERVICE=WCS&"
+        f"VERSION=1.0.0&"
+        f"REQUEST=GetCoverage&"
+        f"{coverage_param}={coverage}&"
+        f"FORMAT={fmt}&"
+        f"BBOX={bbox}&"
+        f"CRS={crs}&"
+        f"WIDTH=1&"
+        f"HEIGHT=1"
+    )
+    return url
+
+
+def _build_wcs_2_0(source: DEMSource, lat: float, lon: float, params: dict) -> str:
+    """WCS 2.0.1 GetCoverage: SUBSET syntax."""
     try:
         res_m = float(source.resolution.replace("m", ""))
     except (ValueError, AttributeError):
         res_m = 25.0
-
     half = res_m / 111320.0 / 2.0
 
-    params = {
-        "SERVICE": "WCS",
-        "VERSION": "2.0.1",
-        "REQUEST": "GetCoverage",
-        "COVERAGEID": source.layer_name or "elevation",
-        "FORMAT": "image/tiff",
-        "SUBSETLON": f"Long({lon - half},{lon + half})",
-        "SUBSETLAT": f"Lat({lat - half},{lat + half})",
-    }
-
-    headers = {"Accept": "image/tiff"}
-    return source.service_url, params, headers
+    coverage = source.layer_name or "elevation"
+    url = (
+        f"{source.service_url}?"
+        f"SERVICE=WCS&"
+        f"VERSION=2.0.1&"
+        f"REQUEST=GetCoverage&"
+        f"COVERAGEID={coverage}&"
+        f"FORMAT=image/tiff&"
+        f"SUBSET=Long({lon - half},{lon + half})&"
+        f"SUBSET=Lat({lat - half},{lat + half})"
+    )
+    return url
