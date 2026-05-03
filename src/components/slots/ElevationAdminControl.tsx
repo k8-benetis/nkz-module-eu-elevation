@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Globe, Settings, Key, Link as LinkIcon } from 'lucide-react';
+import { SlotShell } from '@nekazari/viewer-kit';
+import { Stack, Button } from '@nekazari/ui-kit';
 import { useAuth, NKZClient, useTranslation } from '@nekazari/sdk';
 
 export interface ElevationLayer {
@@ -32,6 +34,8 @@ export interface TerrainProviderInfo {
     requires_token: boolean;
     is_active: boolean;
 }
+
+const elevationAccent = { base: '#64748B', soft: '#F1F5F9', strong: '#475569' };
 
 export const ElevationAdminControl: React.FC = () => {
     const { t } = useTranslation('eu-elevation');
@@ -95,172 +99,173 @@ export const ElevationAdminControl: React.FC = () => {
     };
 
     return (
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex flex-col space-y-3 relative overflow-hidden">
-            <div className="flex items-center gap-2 mb-1">
-                <Globe className="w-5 h-5 text-green-600" />
-                <h3 className="text-gray-800 font-semibold flex-1">{t('globeTerrain', '3D Terrain')}</h3>
-                <button
-                    onClick={() => setShowSettings(!showSettings)}
-                    className="p-1 text-gray-400 hover:text-gray-600 transition-colors rounded"
-                    title={t('terrainSettings', 'Terrain Settings')}
-                >
-                    <Settings className="w-4 h-4" />
-                </button>
-            </div>
+        <SlotShell
+            title={t('globeTerrain', '3D Terrain')}
+            icon={<Globe className="w-4 h-4" />}
+            accent={elevationAccent}
+        >
+            <Stack gap="stack" className="relative overflow-hidden">
+                <div className="flex justify-end">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowSettings(!showSettings)}
+                        leadingIcon={<Settings className="w-4 h-4" />}
+                        title={t('terrainSettings', 'Terrain Settings')}
+                    />
+                </div>
 
-            <p className="text-xs text-gray-500 mb-2">
-                {t('terrainSelectDesc', 'Select the active elevation provider for the 3D globe.')}
-            </p>
-
-            {isLoading ? (
-                <div className="text-xs text-gray-400">{t('loading', 'Loading...')}</div>
-            ) : (
-                <div className="space-y-1">
-                    {/* Built-in providers */}
-                    {providers.filter(p => p.type === 'europe_copernicus' || p.type === 'cesium_world' || p.type === 'maptiler').map(provider => (
-                        <button
-                            key={provider.id}
-                            onClick={() => handleProviderChange(provider.type)}
-                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
-                                prefs?.provider_type === provider.type
-                                    ? 'bg-green-50 border border-green-200 text-green-800'
-                                    : 'bg-gray-50 border border-gray-100 text-gray-700 hover:bg-gray-100'
-                            }`}
-                        >
-                            <div className="flex items-center justify-between">
-                                <span className="font-medium">{provider.name}</span>
-                                {prefs?.provider_type === provider.type && (
-                                    <span className="text-xs bg-green-200 text-green-800 px-1.5 py-0.5 rounded">{t('active', 'Active')}</span>
-                                )}
-                            </div>
-                            <div className="text-xs text-gray-500 mt-0.5">{provider.resolution} · {provider.coverage}</div>
-                            {provider.requires_token && !prefs?.has_maptiler_key && provider.type === 'maptiler' && (
-                                <div className="text-xs text-amber-600 mt-1 flex items-center gap-1">
-                                    <Key className="w-3 h-3" /> {t('needsApiKey', 'API key required — click ⚙ to configure')}
+                {isLoading ? (
+                    <div className="text-nkz-xs text-nkz-text-muted">{t('loading', 'Loading...')}</div>
+                ) : (
+                    <div className="space-y-nkz-tight">
+                        {/* Built-in providers */}
+                        {providers.filter(p => p.type === 'europe_copernicus' || p.type === 'cesium_world' || p.type === 'maptiler').map(provider => (
+                            <button
+                                key={provider.id}
+                                onClick={() => handleProviderChange(provider.type)}
+                                className={`w-full text-left px-3 py-2 rounded-nkz-md text-nkz-sm transition-all ${
+                                    prefs?.provider_type === provider.type
+                                        ? 'bg-nkz-accent-soft border border-nkz-accent-base text-nkz-accent-strong'
+                                        : 'bg-nkz-surface-sunken border border-nkz-border text-nkz-text-primary hover:bg-nkz-surface'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between">
+                                    <span className="font-medium">{provider.name}</span>
+                                    {prefs?.provider_type === provider.type && (
+                                        <span className="text-nkz-xs bg-nkz-accent-soft text-nkz-accent-strong px-1.5 py-0.5 rounded-nkz-sm">{t('active', 'Active')}</span>
+                                    )}
                                 </div>
-                            )}
-                        </button>
-                    ))}
+                                <div className="text-nkz-xs text-nkz-text-muted mt-0.5">{provider.resolution} · {provider.coverage}</div>
+                                {provider.requires_token && !prefs?.has_maptiler_key && provider.type === 'maptiler' && (
+                                    <div className="text-nkz-xs text-amber-600 mt-1 flex items-center gap-1">
+                                        <Key className="w-3 h-3" /> {t('needsApiKey', 'API key required — click ⚙ to configure')}
+                                    </div>
+                                )}
+                            </button>
+                        ))}
 
-                    {/* Custom ingested layers */}
-                    {layers.filter(l => l.is_active).map(layer => (
+                        {/* Custom ingested layers */}
+                        {layers.filter(l => l.is_active).map(layer => (
+                            <button
+                                key={layer.id}
+                                onClick={() => {
+                                    apiClient.put('/preferences', { provider_type: 'custom', custom_terrain_url: layer.url });
+                                    setPrefs(prev => prev ? { ...prev, provider_type: 'custom', custom_terrain_url: layer.url } : null);
+                                    window.dispatchEvent(new CustomEvent('nkz.elevation.change', { detail: { mode: 'refresh' } }));
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded-nkz-md text-nkz-sm transition-all ${
+                                    prefs?.provider_type === 'custom' && prefs?.custom_terrain_url === layer.url
+                                        ? 'bg-nkz-accent-soft border border-nkz-accent-base text-nkz-accent-strong'
+                                        : 'bg-nkz-surface-sunken border border-nkz-border text-nkz-text-primary hover:bg-nkz-surface'
+                                }`}
+                            >
+                                <div className="flex items-center justify-between">
+                                    <span className="font-medium truncate">{layer.name}</span>
+                                    {prefs?.provider_type === 'custom' && prefs?.custom_terrain_url === layer.url && (
+                                        <span className="text-nkz-xs bg-nkz-accent-soft text-nkz-accent-strong px-1.5 py-0.5 rounded-nkz-sm">{t('active', 'Active')}</span>
+                                    )}
+                                </div>
+                                <div className="text-nkz-xs text-nkz-text-muted mt-0.5 truncate">{layer.url}</div>
+                            </button>
+                        ))}
+
+                        {/* Auto */}
                         <button
-                            key={layer.id}
-                            onClick={() => {
-                                apiClient.put('/preferences', { provider_type: 'custom', custom_terrain_url: layer.url });
-                                setPrefs(prev => prev ? { ...prev, provider_type: 'custom', custom_terrain_url: layer.url } : null);
-                                window.dispatchEvent(new CustomEvent('nkz.elevation.change', { detail: { mode: 'refresh' } }));
-                            }}
-                            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
-                                prefs?.provider_type === 'custom' && prefs?.custom_terrain_url === layer.url
-                                    ? 'bg-green-50 border border-green-200 text-green-800'
-                                    : 'bg-gray-50 border border-gray-100 text-gray-700 hover:bg-gray-100'
+                            onClick={() => handleProviderChange('auto')}
+                            className={`w-full text-left px-3 py-2 rounded-nkz-md text-nkz-sm transition-all mb-2 ${
+                                prefs?.provider_type === 'auto'
+                                    ? 'bg-nkz-accent-soft border border-nkz-accent-base text-nkz-accent-strong'
+                                    : 'bg-nkz-surface-sunken border border-nkz-border text-nkz-text-primary hover:bg-nkz-surface'
                             }`}
                         >
                             <div className="flex items-center justify-between">
-                                <span className="font-medium truncate">{layer.name}</span>
-                                {prefs?.provider_type === 'custom' && prefs?.custom_terrain_url === layer.url && (
-                                    <span className="text-xs bg-green-200 text-green-800 px-1.5 py-0.5 rounded">{t('active', 'Active')}</span>
+                                <span className="font-medium">{t('autoMode', 'Auto (Camera Match)')}</span>
+                                {prefs?.provider_type === 'auto' && (
+                                    <span className="text-nkz-xs bg-nkz-accent-soft text-nkz-accent-strong px-1.5 py-0.5 rounded-nkz-sm">{t('active', 'Active')}</span>
                                 )}
                             </div>
-                            <div className="text-xs text-gray-500 mt-0.5 truncate">{layer.url}</div>
+                            <div className="text-nkz-xs text-nkz-text-muted mt-0.5">{t('autoModeDesc', 'Automatically selects best custom terrain based on view')}</div>
                         </button>
-                    ))}
 
-                    {/* Auto */}
-                    <button
-                        onClick={() => handleProviderChange('auto')}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all mb-2 ${
-                            prefs?.provider_type === 'auto'
-                                ? 'bg-blue-50 border border-blue-200 text-blue-800'
-                                : 'bg-gray-50 border border-gray-100 text-gray-700 hover:bg-gray-100'
-                        }`}
-                    >
-                        <div className="flex items-center justify-between">
-                            <span className="font-medium">{t('autoMode', 'Auto (Camera Match)')}</span>
-                            {prefs?.provider_type === 'auto' && (
-                                <span className="text-xs bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded">{t('active', 'Active')}</span>
-                            )}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-0.5">{t('autoModeDesc', 'Automatically selects best custom terrain based on view')}</div>
-                    </button>
-
-                    {/* Off */}
-                    <button
-                        onClick={() => handleProviderChange('off')}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
-                            prefs?.provider_type === 'off'
-                                ? 'bg-gray-100 border border-gray-200 text-gray-800'
-                                : 'bg-gray-50 border border-gray-100 text-gray-700 hover:bg-gray-100'
-                        }`}
-                    >
-                        <span className="font-medium">{t('offMode', 'Off (Flat Map)')}</span>
-                    </button>
-                </div>
-            )}
-
-            {/* Settings Modal */}
-            {showSettings && (
-                <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-10 p-4 flex flex-col">
-                    <div className="flex items-center justify-between mb-4">
-                        <h4 className="font-semibold text-gray-800 flex items-center gap-2">
-                            <Settings className="w-4 h-4" /> {t('terrainSettings', 'Terrain Settings')}
-                        </h4>
-                        <button onClick={() => setShowSettings(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                        {/* Off */}
+                        <button
+                            onClick={() => handleProviderChange('off')}
+                            className={`w-full text-left px-3 py-2 rounded-nkz-md text-nkz-sm transition-all ${
+                                prefs?.provider_type === 'off'
+                                    ? 'bg-nkz-surface-sunken border border-nkz-border text-nkz-text-primary'
+                                    : 'bg-nkz-surface-sunken border border-nkz-border text-nkz-text-primary hover:bg-nkz-surface'
+                            }`}
+                        >
+                            <span className="font-medium">{t('offMode', 'Off (Flat Map)')}</span>
+                        </button>
                     </div>
+                )}
 
-                    <div className="space-y-4 flex-1 overflow-y-auto">
-                        <div>
-                            <label className="text-xs font-medium text-gray-600 flex items-center gap-1 mb-1">
-                                <Key className="w-3 h-3" /> {t('cesiumIonToken', 'Cesium Ion Access Token')}
-                            </label>
-                            <input
-                                type="password"
-                                value={cesiumToken}
-                                onChange={e => setCesiumToken(e.target.value)}
-                                placeholder="eyJhbGciOi..."
-                                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none"
-                            />
-                            <p className="text-xs text-gray-400 mt-1">{t('cesiumTokenHint', 'Get free at cesium.com/ion/signup')}</p>
+                {/* Settings Modal */}
+                {showSettings && (
+                    <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-10 p-4 flex flex-col">
+                        <div className="flex items-center justify-between mb-4">
+                            <h4 className="font-semibold text-nkz-text-primary flex items-center gap-2">
+                                <Settings className="w-4 h-4" /> {t('terrainSettings', 'Terrain Settings')}
+                            </h4>
+                            <button onClick={() => setShowSettings(false)} className="text-nkz-text-muted hover:text-nkz-text-primary">✕</button>
                         </div>
 
-                        <div>
-                            <label className="text-xs font-medium text-gray-600 flex items-center gap-1 mb-1">
-                                <Key className="w-3 h-3" /> {t('maptilerApiKey', 'MapTiler API Key')}
-                            </label>
-                            <input
-                                type="password"
-                                value={maptilerKey}
-                                onChange={e => setMaptilerKey(e.target.value)}
-                                placeholder="..."
-                                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none"
-                            />
-                            <p className="text-xs text-gray-400 mt-1">{t('maptilerKeyHint', 'Get free key at maptiler.com (100k tiles/month)')}</p>
+                        <div className="space-y-4 flex-1 overflow-y-auto">
+                            <div>
+                                <label className="text-nkz-xs font-medium text-nkz-text-secondary flex items-center gap-1 mb-1">
+                                    <Key className="w-3 h-3" /> {t('cesiumIonToken', 'Cesium Ion Access Token')}
+                                </label>
+                                <input
+                                    type="password"
+                                    value={cesiumToken}
+                                    onChange={e => setCesiumToken(e.target.value)}
+                                    placeholder="eyJhbGciOi..."
+                                    className="w-full bg-nkz-surface-sunken border border-nkz-border rounded-nkz-md px-3 py-2 text-nkz-sm font-mono focus:border-nkz-accent-base focus:ring-1 focus:ring-nkz-accent-base outline-none"
+                                />
+                                <p className="text-nkz-xs text-nkz-text-muted mt-1">{t('cesiumTokenHint', 'Get free at cesium.com/ion/signup')}</p>
+                            </div>
+
+                            <div>
+                                <label className="text-nkz-xs font-medium text-nkz-text-secondary flex items-center gap-1 mb-1">
+                                    <Key className="w-3 h-3" /> {t('maptilerApiKey', 'MapTiler API Key')}
+                                </label>
+                                <input
+                                    type="password"
+                                    value={maptilerKey}
+                                    onChange={e => setMaptilerKey(e.target.value)}
+                                    placeholder="..."
+                                    className="w-full bg-nkz-surface-sunken border border-nkz-border rounded-nkz-md px-3 py-2 text-nkz-sm font-mono focus:border-nkz-accent-base focus:ring-1 focus:ring-nkz-accent-base outline-none"
+                                />
+                                <p className="text-nkz-xs text-nkz-text-muted mt-1">{t('maptilerKeyHint', 'Get free key at maptiler.com (100k tiles/month)')}</p>
+                            </div>
+
+                            <div>
+                                <label className="text-nkz-xs font-medium text-nkz-text-secondary flex items-center gap-1 mb-1">
+                                    <LinkIcon className="w-3 h-3" /> {t('customTerrainUrl', 'Custom Terrain URL')}
+                                </label>
+                                <input
+                                    type="url"
+                                    value={customUrl}
+                                    onChange={e => setCustomUrl(e.target.value)}
+                                    placeholder="https://your-server/terrain/layer.json"
+                                    className="w-full bg-nkz-surface-sunken border border-nkz-border rounded-nkz-md px-3 py-2 text-nkz-sm font-mono focus:border-nkz-accent-base focus:ring-1 focus:ring-nkz-accent-base outline-none"
+                                />
+                            </div>
                         </div>
 
-                        <div>
-                            <label className="text-xs font-medium text-gray-600 flex items-center gap-1 mb-1">
-                                <LinkIcon className="w-3 h-3" /> {t('customTerrainUrl', 'Custom Terrain URL')}
-                            </label>
-                            <input
-                                type="url"
-                                value={customUrl}
-                                onChange={e => setCustomUrl(e.target.value)}
-                                placeholder="https://your-server/terrain/layer.json"
-                                className="w-full bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:border-green-500 focus:ring-1 focus:ring-green-500 outline-none"
-                            />
-                        </div>
+                        <Button
+                            variant="primary"
+                            onClick={handleSaveTokens}
+                            className="w-full mt-4"
+                        >
+                            {t('saveSettings', 'Save Settings')}
+                        </Button>
                     </div>
-
-                    <button
-                        onClick={handleSaveTokens}
-                        className="w-full mt-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors text-sm"
-                    >
-                        {t('saveSettings', 'Save Settings')}
-                    </button>
-                </div>
-            )}
-        </div>
+                )}
+            </Stack>
+        </SlotShell>
     );
 };
 

@@ -7,6 +7,11 @@
   "short_description": "Pan-European 3D Elevation Models",
   "_comment_branding": "=== BRANDING & VISUAL IDENTITY ===",
   "icon": "mountain",
+  "accent": {
+    "base": "#64748B",
+    "soft": "#F1F5F9",
+    "strong": "#475569"
+  },
   "icon_url": "/modules/nkz-module-eu-elevation/assets/icon.png",
   "company_logo_url": "/modules/nkz-module-eu-elevation/assets/company-logo.png",
   "_comment_developer": "=== DEVELOPER INFORMATION ===",
@@ -71,7 +76,8 @@
       {
         "id": "elevation-context-control",
         "priority": 50,
-        "component": "ElevationAdminControl"
+        "component": "ElevationAdminControl",
+        "tab": "Terreno"
       }
     ],
     "bottom-panel": [],
@@ -86,6 +92,37 @@
     "dashboard-widget": []
   },
   "_comment_metadata": "=== ADDITIONAL METADATA ===",
+  "surfaces": {
+    "web": {
+      "slots": {
+        "layer-toggle": [
+          {
+            "id": "clc-layer-toggle",
+            "priority": 30,
+            "component": "CorineLandCoverToggle"
+          }
+        ],
+        "context-panel": [
+          {
+            "id": "elevation-context-control",
+            "priority": 50,
+            "component": "ElevationAdminControl",
+            "tab": "Terreno"
+          }
+        ],
+        "bottom-panel": [],
+        "entity-tree": [],
+        "map-layer": [
+          {
+            "id": "elevation-cesium-layer",
+            "priority": 10,
+            "component": "ElevationLayer"
+          }
+        ],
+        "dashboard-widget": []
+      }
+    }
+  },
   "metadata": {
     "icon": "✨",
     "color": "#3B82F6",
