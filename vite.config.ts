@@ -8,6 +8,10 @@ const MODULE_ID = 'nkz-module-eu-elevation';
 export default defineConfig(nkzModulePreset({
   moduleId: MODULE_ID,
   entry: 'src/moduleEntry.ts',
+  additionalExternals: {
+    '@nekazari/design-tokens': '__NKZ_DESIGN_TOKENS__',
+    '@nekazari/viewer-kit': '__NKZ_VIEWER_KIT__',
+  },
 
   // Additional config for local development
   viteConfig: {

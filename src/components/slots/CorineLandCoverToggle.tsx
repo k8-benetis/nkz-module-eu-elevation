@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Layers, ChevronDown, ChevronUp } from 'lucide-react';
+import { SlotShellCompact } from '@nekazari/viewer-kit';
+import { Toggle, Slider } from '@nekazari/ui-kit';
 import { useViewerOptional } from '@nekazari/sdk';
 
 declare const Cesium: any;
@@ -61,6 +63,8 @@ const CLC_CATEGORIES = [
     ]},
 ];
 
+const elevationAccent = { base: '#64748B', soft: '#F1F5F9', strong: '#475569' };
+
 export const CorineLandCoverToggle: React.FC = () => {
     const viewerContext = useViewerOptional();
     const viewer = viewerContext?.cesiumViewer;
@@ -76,8 +80,8 @@ export const CorineLandCoverToggle: React.FC = () => {
 
     useEffect(() => {
         console.log('[CorineToggle] Dispatching toggle event:', { enabled, opacity });
-        window.dispatchEvent(new CustomEvent('nkz.clc.toggle', { 
-            detail: { enabled, opacity } 
+        window.dispatchEvent(new CustomEvent('nkz.clc.toggle', {
+            detail: { enabled, opacity }
         }));
     }, [enabled, opacity]);
 
@@ -96,85 +100,82 @@ export const CorineLandCoverToggle: React.FC = () => {
     }, [enabled, opacity]);
 
     return (
-        <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-1.5 min-w-0">
-                    <Layers className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    <span className="text-xs font-medium text-gray-300 truncate">CORINE Land Cover</span>
+        <SlotShellCompact moduleId="nkz-module-eu-elevation" accent={elevationAccent}>
+            <div className="flex flex-col gap-nkz-tight">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-nkz-inline min-w-0">
+                        <Layers className="w-3.5 h-3.5 text-nkz-accent-base shrink-0" />
+                        <span className="text-nkz-xs font-medium text-nkz-text-primary truncate">CORINE Land Cover</span>
+                    </div>
+                    <Toggle
+                        checked={enabled}
+                        onChange={() => setEnabled(!enabled)}
+                        label=""
+                        size="sm"
+                    />
                 </div>
-                <button
-                    onClick={() => setEnabled(!enabled)}
-                    className={`relative inline-flex h-5 w-8 items-center rounded-full transition-colors shrink-0 ${enabled ? 'bg-emerald-500' : 'bg-gray-600'}`}
-                    role="switch"
-                    aria-checked={enabled}
-                >
-                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform ${enabled ? 'translate-x-[18px]' : 'translate-x-[2px]'}`} />
-                </button>
-            </div>
-            {enabled && (
-                <>
-                    <div className="flex items-center gap-2 pl-5">
-                        <span className="text-[10px] text-gray-500 w-6">0%</span>
-                        <input
-                            type="range"
-                            min="0"
-                            max="100"
+                {enabled && (
+                    <>
+                        <Slider
                             value={Math.round(opacity * 100)}
-                            onChange={e => setOpacity(parseInt(e.target.value) / 100)}
-                            className="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                            onChange={(v) => setOpacity(v / 100)}
+                            min={0}
+                            max={100}
+                            step={1}
+                            label=""
+                            unit="%"
                         />
-                        <span className="text-[10px] text-gray-500 w-8 text-right">{Math.round(opacity * 100)}%</span>
-                    </div>
 
-                    {/* Legend */}
-                    <div className="pl-5 mt-1">
-                        <button
-                            onClick={() => setShowLegend(!showLegend)}
-                            className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-300 transition-colors"
-                        >
-                            {showLegend ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                            {showLegend ? 'Hide legend' : 'Show legend'}
-                        </button>
+                        {/* Legend */}
+                        <div>
+                            <button
+                                onClick={() => setShowLegend(!showLegend)}
+                                className="flex items-center gap-1 text-nkz-xs text-nkz-text-muted hover:text-nkz-text-primary transition-colors"
+                            >
+                                {showLegend ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                {showLegend ? 'Hide legend' : 'Show legend'}
+                            </button>
 
-                        {showLegend && (
-                            <div className="mt-1 space-y-0.5 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
-                                {CLC_CATEGORIES.map(cat => (
-                                    <div key={cat.group}>
-                                        <button
-                                            onClick={() => setExpandedGroup(expandedGroup === cat.group ? null : cat.group)}
-                                            className="flex items-center gap-1.5 w-full text-[10px] text-gray-400 hover:text-gray-200 py-0.5"
-                                        >
-                                            <span
-                                                className="w-2 h-2 rounded-sm shrink-0"
-                                                style={{ backgroundColor: cat.color }}
-                                            />
-                                            <span className="truncate">{cat.group}</span>
-                                            {expandedGroup === cat.group ? <ChevronUp className="w-2.5 h-2.5 ml-auto" /> : <ChevronDown className="w-2.5 h-2.5 ml-auto" />}
-                                        </button>
-                                        {expandedGroup === cat.group && (
-                                            <div className="ml-3 space-y-0.5 py-0.5">
-                                                {cat.items.map(item => (
-                                                    <div key={item.code} className="flex items-center gap-1.5 text-[9px] text-gray-500">
-                                                        <span
-                                                            className="w-2 h-2 rounded-sm shrink-0"
-                                                            style={{ backgroundColor: cat.color }}
-                                                        />
-                                                        <span className="font-mono text-gray-600 w-6">{item.code}</span>
-                                                        <span className="truncate">{item.name}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
+                            {showLegend && (
+                                <div className="mt-1 space-y-0.5 max-h-48 overflow-y-auto pr-1">
+                                    {CLC_CATEGORIES.map(cat => (
+                                        <div key={cat.group}>
+                                            <button
+                                                onClick={() => setExpandedGroup(expandedGroup === cat.group ? null : cat.group)}
+                                                className="flex items-center gap-1.5 w-full text-nkz-xs text-nkz-text-muted hover:text-nkz-text-primary py-0.5"
+                                            >
+                                                <span
+                                                    className="w-2 h-2 rounded-sm shrink-0"
+                                                    style={{ backgroundColor: cat.color }}
+                                                />
+                                                <span className="truncate">{cat.group}</span>
+                                                {expandedGroup === cat.group ? <ChevronUp className="w-2.5 h-2.5 ml-auto" /> : <ChevronDown className="w-2.5 h-2.5 ml-auto" />}
+                                            </button>
+                                            {expandedGroup === cat.group && (
+                                                <div className="ml-3 space-y-0.5 py-0.5">
+                                                    {cat.items.map(item => (
+                                                        <div key={item.code} className="flex items-center gap-1.5 text-nkz-xs text-nkz-text-muted">
+                                                            <span
+                                                                className="w-2 h-2 rounded-sm shrink-0"
+                                                                style={{ backgroundColor: cat.color }}
+                                                            />
+                                                            <span className="font-mono text-nkz-text-disabled w-6">{item.code}</span>
+                                                            <span className="truncate">{item.name}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                    <div className="text-nkz-xs text-nkz-text-disabled pt-1">
+                                        © EEA — CORINE Land Cover 2018
                                     </div>
-                                ))}
-                                <div className="text-[9px] text-gray-600 pt-1">
-                                    © EEA — CORINE Land Cover 2018
                                 </div>
-                            </div>
-                        )}
-                    </div>
-                </>
-            )}
-        </div>
+                            )}
+                        </div>
+                    </>
+                )}
+            </div>
+        </SlotShellCompact>
     );
 };
