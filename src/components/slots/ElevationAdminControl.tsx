@@ -100,6 +100,7 @@ export const ElevationAdminControl: React.FC = () => {
 
     return (
         <SlotShell
+            moduleId="nkz-module-eu-elevation"
             title={t('globeTerrain', '3D Terrain')}
             icon={<Globe className="w-4 h-4" />}
             accent={elevationAccent}
