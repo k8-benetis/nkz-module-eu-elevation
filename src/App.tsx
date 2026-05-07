@@ -10,7 +10,7 @@ const ElevationApp: React.FC = () => {
     <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-6 md:p-10 min-h-screen">
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-900/50 text-blue-300 text-sm font-medium mb-6 border border-blue-800">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-900 text-blue-200 text-sm font-medium mb-6 border border-blue-800">
             EU Elevation Pipeline
           </div>
           <div className="flex items-center justify-center gap-4 mb-6">

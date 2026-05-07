@@ -154,7 +154,7 @@ export const MainView: React.FC = () => {
                         
                         {/* Processed Layers List (Simplified) */}
                         <section className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-                            <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                            <div className="p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-slate-800">
                                 <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2 uppercase tracking-wider">
                                     <RefreshCw className="w-4 h-4 text-green-600" />
                                     {t('configuredSources', 'Processed Terrain Layers')}
@@ -228,7 +228,7 @@ export const MainView: React.FC = () => {
                     <div className="lg:col-span-4 space-y-6">
                         {/* Selector (Reused widget) */}
                         <div className="shadow-sm rounded-2xl overflow-hidden border border-gray-200 bg-white">
-                            <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+                            <div className="p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-slate-800">
                                 <h2 className="text-sm font-bold text-gray-800 flex items-center gap-2 uppercase tracking-wider">
                                     <Settings className="w-4 h-4 text-blue-600" />
                                     {t('terrainControl', 'Terrain Selection')}

@@ -106,7 +106,7 @@ export const CustomDemSourceForm: React.FC = () => {
 
     return (
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+            <div className="p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-slate-800">
                 <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
                     <Globe className="w-5 h-5 text-blue-600" />
                     {t('customDemSources', 'Custom DEM Sources')}
