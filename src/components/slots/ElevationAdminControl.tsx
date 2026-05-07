@@ -205,7 +205,7 @@ export const ElevationAdminControl: React.FC = () => {
 
                 {/* Settings Modal */}
                 {showSettings && (
-                    <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-10 p-4 flex flex-col">
+                    <div className="absolute inset-0 bg-white dark:bg-slate-900 z-10 p-4 flex flex-col">
                         <div className="flex items-center justify-between mb-4">
                             <h4 className="font-semibold text-nkz-text-primary flex items-center gap-2">
                                 <Settings className="w-4 h-4" /> {t('terrainSettings', 'Terrain Settings')}
