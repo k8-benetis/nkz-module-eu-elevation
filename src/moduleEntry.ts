@@ -1,3 +1,4 @@
+import { defineModule } from "@nekazari/module-kit";
 import { moduleSlots } from './slots/index';
 import MainView from './components/MainView';
 import pkg from '../package.json';
