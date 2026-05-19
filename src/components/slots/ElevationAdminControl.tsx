@@ -65,8 +65,8 @@ export const ElevationAdminControl: React.FC = () => {
             apiClient.get<ElevationLayer[]>('/layers').catch(() => []),
         ]).then(([p, prov, lyr]) => {
             setPrefs(p);
-            setProviders(prov);
-            setLayers(lyr || []);
+            setProviders(Array.isArray(prov) ? prov : []);
+            setLayers(Array.isArray(lyr) ? lyr : []);
             if (p) {
                 setCustomUrl(p.custom_terrain_url || '');
             }
