@@ -42,7 +42,7 @@ export const ElevationAdminControl: React.FC = () => {
     const { getToken, getTenantId } = useAuth();
 
     const apiClient = useMemo(() => new NKZClient({
-        baseUrl: '/api/eu-elevation',
+        baseUrl: '/api/modules/nkz-module-eu-elevation',
         getToken,
         getTenantId
     }), [getToken, getTenantId]);
