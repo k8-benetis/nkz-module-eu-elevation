@@ -2,7 +2,8 @@
  * Terrain Provider Factory — SOTA multi-tier elevation for EU/UK.
  *
  * Tiers:
- *   - Cesium World Terrain: Global ~30m (free, no token needed)
+ *   - Europe Copernicus: GLO-30 ~30m, free, self-hosted on platform MinIO (no token)
+ *   - Cesium World Terrain: Global ~30m (requires Cesium Ion token)
  *   - MapTiler: High-res EU/UK up to 50cm (requires API key)
  *   - Custom: User-provided quantized mesh URL (self-hosted or ingested)
  *
@@ -108,7 +109,21 @@ function createCustomTerrain(url?: string): any {
 }
 
 function createEuropeCopernicusTerrain(config: TerrainProviderConfig): any {
-    // Cesium World Terrain — free, global ~30m, uses host Cesium Ion token.
-    // Self-hosted tiles only for small regions via custom/auto modes.
-    return createCesiumWorldTerrain(config.cesiumIonToken);
+    // Copernicus GLO-30 tiles — self-hosted on platform MinIO (no Cesium Ion token needed).
+    // Falls through to ellipsoid if URL is not configured.
+    const url = config.europeCopernicusUrl;
+    if (!url) {
+        console.warn('[Elevation] Europe Copernicus URL missing, falling back to ellipsoid');
+        return new Cesium.EllipsoidTerrainProvider();
+    }
+    try {
+        return new Cesium.CesiumTerrainProvider({
+            url,
+            requestVertexNormals: true,
+            requestWaterMask: false,
+        });
+    } catch (error) {
+        console.warn('[Elevation] Copernicus terrain failed, falling back to ellipsoid:', error);
+        return new Cesium.EllipsoidTerrainProvider();
+    }
 }

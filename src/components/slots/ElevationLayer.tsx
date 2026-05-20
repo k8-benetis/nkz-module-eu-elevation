@@ -67,8 +67,9 @@ export const ElevationLayer: React.FC = () => {
             tokensRef.current = tok;
             layersRef.current = layers || [];
             // Only apply if the user has explicitly chosen a non-default provider.
-            // Default (europe_copernicus) means "let the host decide" (IGN/IDENA).
-            if (viewer && tok && tok.provider_type !== 'europe_copernicus') {
+            // Default (europe_copernicus or unset) means "let the host decide" (IGN/IDENA).
+            const isExplicit = tok?.provider_type && tok.provider_type !== 'europe_copernicus';
+            if (viewer && isExplicit) {
                 applyPreference(tok, layers || []);
             }
         });
@@ -89,9 +90,8 @@ export const ElevationLayer: React.FC = () => {
             config = match
                 ? { type: 'custom' as const, customUrl: match.url, cesiumIonToken: tok.cesium_ion_token }
                 : { type: 'europe_copernicus' as const, cesiumIonToken: tok.cesium_ion_token, europeCopernicusUrl: getDefaultCopernicusUrl() };
-        } else if (tok.provider_type === 'europe_copernicus') {
-            // Default — host manages terrain (IGN/IDENA). Shouldn't reach here
-            // (guarded in callers), but if it does, don't change terrain.
+        } else if (!tok.provider_type || tok.provider_type === 'europe_copernicus') {
+            // Default / unset — host manages terrain (IGN/IDENA).
             return;
         } else if (tok.provider_type === 'custom' && tok.custom_terrain_url) {
             config = { type: 'custom', customUrl: tok.custom_terrain_url };
@@ -104,7 +104,9 @@ export const ElevationLayer: React.FC = () => {
             }
             config = { type: 'cesium_world', cesiumIonToken: tok.cesium_ion_token };
         } else {
-            config = { type: 'europe_copernicus', europeCopernicusUrl: getDefaultCopernicusUrl() };
+            // Unknown provider — do nothing, let the host manage terrain.
+            console.warn('[Elevation] Unknown terrain provider type:', tok.provider_type, '— keeping host terrain');
+            return;
         }
 
         // Skip if same provider type already applied (prevents flicker loops)
@@ -228,7 +230,7 @@ export const ElevationLayer: React.FC = () => {
                     if (!tok) return;
                     tokensRef.current = tok;
                     layersRef.current = layers || [];
-                    if (tok.provider_type === 'europe_copernicus') {
+                    if (!tok.provider_type || tok.provider_type === 'europe_copernicus') {
                         // User switched back to default — restore host terrain.
                         lastAppliedRef.current = '';
                         const cam = viewer.camera;
