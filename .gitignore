@@ -12,3 +12,14 @@ dist/
 !LICENSE
 !CURRENT_STATE.md
 !CHANGELOG.md
+docs/superpowers/
+docs/internal/
+internal-docs/
+.ai/
+docs/plans/
+docs/specs/
+docs/audits/
+*_PLAN.md
+*_SPEC.md
+*HANDOVER*.md
+HANDOFF.md
