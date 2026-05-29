@@ -4,6 +4,14 @@
   "display_name": "EU Elevation Module",
   "version": "1.0.0",
   "description": "Premium Nekazari module for generating and serving highly-detailed, on-demand 3D terrain and elevation data across the European Union and the United Kingdom via Quantized Mesh.",
+  "description_i18n": {
+    "es": "Módulo premium de Nekazari para generar y servir datos 3D de terreno y elevación de alta precisión bajo demanda en toda la Unión Europea y Reino Unido mediante Quantized Mesh.",
+    "en": "Premium Nekazari module for generating and serving highly-detailed, on-demand 3D terrain and elevation data across the European Union and the United Kingdom via Quantized Mesh.",
+    "eu": "Nekazariren premium modulua, eskariaren arabera, EB eta Erresuma Batuan zehar 3D lur-elevazio datu oso zehatzak sortu eta zerbitzatzeko Quantized Mesh bidez.",
+    "fr": "Module premium Nekazari pour générer et servir des données 3D de terrain et d'élévation très détaillées à la demande dans toute l'Union Européenne et le Royaume-Uni via Quantized Mesh.",
+    "pt": "Módulo premium da Nekazari para gerar e servir dados 3D de terreno e elevação altamente detalhados sob demanda em toda a União Europeia e Reino Unido via Quantized Mesh.",
+    "ca": "Mòdul premium de Nekazari per generar i servir dades 3D de terreny i elevació d'alta precisió sota demanda a tota la Unió Europea i el Regne Unit mitjançant Quantized Mesh."
+  },
   "short_description": "Pan-European 3D Elevation Models",
   "_comment_branding": "=== BRANDING & VISUAL IDENTITY ===",
   "icon": "mountain",
