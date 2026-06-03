@@ -181,3 +181,17 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "After push, deploy to K8s:" >> "$GITHUB_STEP_SUMMARY"
           echo "\`kubectl rollout restart deployment/elevation-api elevation-worker -n nekazari\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # Publish MF2 remote via OIDC (push to main only)
+  publish-module:
+    name: Publish Module
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
+    uses: nkz-os/nkz/.github/workflows/_publish-module.yml@main
+    with:
+      module_id: nkz-module-eu-elevation
+    secrets:
+      INTERNAL_SERVICE_SECRET: ${{ secrets.INTERNAL_SERVICE_SECRET }}
