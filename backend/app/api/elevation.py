@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from app.middleware.auth import require_auth, get_tenant_id
 from app.tasks.elevation_tasks import process_dem_to_quantized_mesh, process_local_dem_to_quantized_mesh
 from app.dem_sources import get_source, get_all_sources
-from app.services.point_query import resolve_source, build_wcs_url
+from app.services.point_query import resolve_source, build_wcs_url, WCS_PARAMS
 from app.config import settings
 from app.common.crypto import encrypt_token, decrypt_token
 from sqlalchemy.orm import Session
@@ -865,3 +865,104 @@ async def get_elevation_point(
         await _cache_set(r, cache_key, result)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Raster grid endpoint — builds a DEM grid dict for pathfinding consumers
+# ---------------------------------------------------------------------------
+
+async def _wcs_bbox_query(source: dict, bbox: tuple, width: int, height: int) -> bytes:
+    """WCS GetCoverage for a full bbox returning raw GeoTIFF bytes."""
+    min_lon, min_lat, max_lon, max_lat = bbox
+    params = WCS_PARAMS.get(source.get("country_code", ""), {})
+    version = params.get("VERSION", "2.0.1")
+    coverage = source.get("layer_name") or "elevation"
+
+    if version == "1.0.0":
+        fmt = params.get("FORMAT", source.get("format", "GEOTIFFINT16"))
+        crs = params.get("CRS", "EPSG:4326")
+        coverage_param = params.get("COVERAGE_PARAM", "COVERAGE")
+        bbox_str = f"{min_lon},{min_lat},{max_lon},{max_lat}"
+        url = (
+            f"{source['service_url']}?"
+            f"SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage&"
+            f"{coverage_param}={coverage}&FORMAT={fmt}&"
+            f"BBOX={bbox_str}&CRS={crs}&WIDTH={width}&HEIGHT={height}"
+        )
+    else:
+        url = (
+            f"{source['service_url']}?"
+            f"SERVICE=WCS&VERSION=2.0.1&REQUEST=GetCoverage&"
+            f"COVERAGEID={coverage}&FORMAT=image/tiff&"
+            f"SUBSET=Long({min_lon},{max_lon})&SUBSET=Lat({min_lat},{max_lat})"
+            f"&SCALEFACTOR=1"
+        )
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(url, headers={"User-Agent": "Nekazari/2.0"})
+        resp.raise_for_status()
+        return resp.content
+
+
+@router.get("/raster")
+async def get_elevation_raster(
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+    resolution_m: float = 10,
+):
+    """Return a DEM grid dict {elevations, origin_lon, origin_lat, pixel_size_deg, cols, rows}
+    for the requested bounding box. Uses the best available DEM source."""
+    bbox = (min_lon, min_lat, max_lon, max_lat)
+
+    # Find a DEM source covering the bbox centre
+    centre_lat = (min_lat + max_lat) / 2.0
+    centre_lon = (min_lon + max_lon) / 2.0
+    dem = resolve_source(centre_lat, centre_lon)
+    if not dem:
+        raise HTTPException(status_code=404, detail={
+            "error": "no_dem_coverage",
+            "message": f"Bbox centre ({centre_lon}, {centre_lat}) outside all DEM coverage areas"
+        })
+
+    source_dict = {
+        "service_url": dem.service_url,
+        "layer_name": dem.layer_name,
+        "format": dem.format,
+        "country_code": dem.country_code,
+    }
+
+    # Compute grid dimensions
+    pixel_size_deg = resolution_m / 111320.0
+    cols = max(2, int(round((max_lon - min_lon) / pixel_size_deg)))
+    rows = max(2, int(round((max_lat - min_lat) / pixel_size_deg)))
+    # Recalculate from integer dimensions for consistent step
+    pixel_size_deg = (max_lon - min_lon) / cols
+
+    try:
+        raw = await _wcs_bbox_query(source_dict, bbox, cols, rows)
+        with rasterio.open(io.BytesIO(raw)) as ds:
+            band = ds.read(1)
+            elevations = band.tolist()
+    except httpx.HTTPError as e:
+        logger.error("WCS raster query failed: %s", e)
+        raise HTTPException(status_code=502, detail={
+            "error": "wcs_unavailable",
+            "message": f"DEM source {dem.country_code} unreachable"
+        })
+    except Exception as e:
+        logger.error("Failed to build raster grid from %s: %s", dem.country_code, e)
+        raise HTTPException(status_code=502, detail={
+            "error": "invalid_response",
+            "message": f"Could not parse elevation raster from {dem.country_code}"
+        })
+
+    return {
+        "elevations": elevations,
+        "origin_lon": min_lon,
+        "origin_lat": min_lat,
+        "pixel_size_deg": pixel_size_deg,
+        "cols": cols,
+        "rows": rows,
+    }
