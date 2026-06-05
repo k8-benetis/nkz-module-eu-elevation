@@ -42,7 +42,7 @@ export const ElevationAdminControl: React.FC = () => {
     const { getToken, getTenantId } = useAuth();
 
     const apiClient = useMemo(() => new NKZClient({
-        baseUrl: '/api/modules/nkz-module-eu-elevation',
+        baseUrl: '/api/elevation',
         getToken,
         getTenantId
     }), [getToken, getTenantId]);
@@ -60,9 +60,9 @@ export const ElevationAdminControl: React.FC = () => {
 
     useEffect(() => {
         Promise.all([
-            apiClient.get<TerrainPreference>('/preferences').catch(() => null),
-            apiClient.get<TerrainProviderInfo[]>('/providers').catch(() => []),
-            apiClient.get<ElevationLayer[]>('/layers').catch(() => []),
+            apiClient.get<TerrainPreference>('/sources').catch(() => null),
+            apiClient.get<TerrainProviderInfo[]>('/sources/catalog').catch(() => []),
+            apiClient.get<ElevationLayer[]>('/sources/custom').catch(() => []),
         ]).then(([p, prov, lyr]) => {
             setPrefs(p);
             setProviders(Array.isArray(prov) ? prov : []);
