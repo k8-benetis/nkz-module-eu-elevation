@@ -25,6 +25,8 @@ from app.middleware.auth import require_auth, get_tenant_id
 from app.tasks.elevation_tasks import process_dem_to_quantized_mesh, process_local_dem_to_quantized_mesh
 from app.dem_sources import get_source, get_all_sources
 from app.services.point_query import resolve_source, build_wcs_url, WCS_PARAMS
+from app.services.source_registry import SourceRegistry, _parse_resolution
+from enum import Enum
 from app.config import settings
 from app.common.crypto import encrypt_token, decrypt_token
 from sqlalchemy.orm import Session
@@ -35,6 +37,24 @@ import uuid
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# ── Purpose parameter enum ────────────────────────────────────────
+
+class PurposeEnum(str, Enum):
+    auto = "auto"
+    precision = "precision"
+    routing = "routing"
+    weather = "weather"
+    visualization = "visualization"
+
+# SourceRegistry singleton (lazy init)
+_source_registry: Optional[SourceRegistry] = None
+
+def _get_registry() -> SourceRegistry:
+    global _source_registry
+    if _source_registry is None:
+        _source_registry = SourceRegistry()
+    return _source_registry
 
 # ============================================================================
 # Built-in terrain providers (Tier 0 — no ingestion needed)
@@ -792,6 +812,7 @@ async def _cache_set(r, key: str, value: dict, ttl: int = 86400):
 async def get_elevation_point(
     lat: float,
     lon: float,
+    purpose: PurposeEnum = PurposeEnum.auto,
     source: str = "auto",
 ):
     """Return elevation (meters) for a single WGS84 point. Cached 24h in Redis."""
@@ -808,9 +829,13 @@ async def get_elevation_point(
 
     # Static test data for well-known locations (WCS fallback)
     if lat_r == 42.817 and lon_r == -1.642:
-        result = {"lat": lat, "lon": lon, "elevation_m": 450.0, "source": "static", "resolution_m": 5}
+        result = {"lat": lat, "lon": lon, "elevation_m": 450.0,
+                  "source": {"id": "static:test", "name": "Static test data", "category": "static",
+                             "is_bare_earth": True, "accuracy_v_m": None, "resolution_m": 5}}
     elif lat_r == 42.0 and lon_r == -1.0:
-        result = {"lat": lat, "lon": lon, "elevation_m": 300.0, "source": "static", "resolution_m": 5}
+        result = {"lat": lat, "lon": lon, "elevation_m": 300.0,
+                  "source": {"id": "static:test", "name": "Static test data", "category": "static",
+                             "is_bare_earth": True, "accuracy_v_m": None, "resolution_m": 5}}
     else:
         if source == "auto":
             dem = resolve_source(lat, lon)
@@ -856,12 +881,18 @@ async def get_elevation_point(
             "lat": lat,
             "lon": lon,
             "elevation_m": round(elevation, 2),
-            "source": dem.country_code,
-            "resolution_m": int(dem.resolution.replace("m", "")) if dem.resolution else None,
+            "source": {
+                "id": f"builtin:{dem.country_code}",
+                "name": dem.country_name,
+                "category": f"custom_wcs:{dem.country_code}",
+                "is_bare_earth": True,
+                "accuracy_v_m": None,
+                "resolution_m": int(dem.resolution.replace("m", "")) if dem.resolution else None,
+            },
         }
 
     # Cache for 24h (non-fatal if Redis is down)
-    if r and result.get("source") != "static":
+    if r and result.get("source", {}).get("id") != "static:test":
         await _cache_set(r, cache_key, result)
 
     return result
@@ -911,6 +942,7 @@ async def get_elevation_raster(
     max_lon: float,
     max_lat: float,
     resolution_m: float = 10,
+    purpose: PurposeEnum = PurposeEnum.auto,
 ):
     """Return a DEM grid dict {elevations, origin_lon, origin_lat, pixel_size_deg, cols, rows}
     for the requested bounding box. Uses the best available DEM source."""
@@ -965,4 +997,10 @@ async def get_elevation_raster(
         "pixel_size_deg": pixel_size_deg,
         "cols": cols,
         "rows": rows,
+        "source": {
+            "id": f"builtin:{dem.country_code}",
+            "name": dem.country_name,
+            "category": f"custom_wcs:{dem.country_code}",
+            "resolution_m": _parse_resolution(dem.resolution),
+        },
     }
