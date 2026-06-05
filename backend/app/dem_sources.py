@@ -56,7 +56,13 @@ DEM_SOURCES: list[DEMSource] = [
         format="GeoTIFF",
         resolution="2m",
         bbox=(-31.3, 30.0, -6.2, 42.2),  # Includes Açores, Madeira
-        notes="DGT - Modelos Digitais do Relevo. 0.5m a 2m"
+        fallback=True,  # Redirects to Copernicus 30m while DGT endpoint is down
+        notes="DGT - Modelos Digitais do Relevo. ENDPOINT CAÍDO (2026-06-05): "
+              "servicos.dgterritorio.pt migró a cartografia.dgterritorio.gov.pt. "
+              "El WCS del MDT no está disponible públicamente en la nueva infraestructura. "
+              "Posible endpoint futuro: cartografia.dgterritorio.gov.pt/wcs-inspire/mdt25. "
+              "Contacto DGT: loja@dgterritorio.pt. "
+              "Mientras tanto se usa Copernicus GLO-30 (30m) vía fallback paneuropeo."
     ),
     DEMSource(
         country_code="FR",
