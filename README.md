@@ -33,6 +33,16 @@ Premium micro-module for the Nekazari Platform ecosystem, delivering multi-tier 
 - **Terrain Factory** — abstracts provider creation (Cesium/MapTiler/Custom)
 - **Slots**: `map-layer` (terrain injection), `layer-toggle` (admin control), `dashboard-widget`, `context-panel`
 
+## DEM Data Sources
+
+The backend resolves elevation queries against national WCS/WMS endpoints via the catalog in `backend/app/dem_sources.py`. Each country maps to a preferred source; if unavailable, the **pan-European Copernicus GLO-30 DEM (30m)** serves as automatic fallback.
+
+### Known issues
+
+| Country | Status | Notes |
+|---------|--------|-------|
+| **Portugal (PT)** | ⚠️ Fallback activo | El endpoint histórico `servicos.dgterritorio.pt/wcs/mdr` dejó de funcionar tras la migración de la DGT a dominios `.gov.pt` (~2024-2025). Se comprobó que `cartografia.dgterritorio.gov.pt` opera WCS 2.0.1 (ortofotos) pero **el servicio WCS del MDT no está disponible públicamente**. La entrada PT tiene `fallback=True`, redirigiendo automáticamente al Copernicus 30m. Para restaurar la resolución nativa (0.5m–2m) cuando la DGT reactive el endpoint: actualizar `service_url` y quitar `fallback=True`. Contacto DGT: `loja@dgterritorio.pt`. |
+
 ## Quick Start
 
 ### Development

@@ -18,8 +18,15 @@ WCS_PARAMS: dict[str, dict] = {
 
 
 def resolve_source(lat: float, lon: float) -> DEMSource | None:
-    """Find the first DEM source whose bbox contains the query point."""
+    """Find the first DEM source whose bbox contains the query point.
+
+    Only primary (non-fallback) national WCS endpoints are considered.
+    Sources marked fallback=True (pan-European Copernicus, known outages
+    like PT since 2026-06-05) are skipped — they are not WCS-queryable.
+    """
     for src in DEM_SOURCES:
+        if src.fallback:
+            continue
         west, south, east, north = src.bbox
         if west <= lon <= east and south <= lat <= north:
             return src
