@@ -90,9 +90,11 @@ export const ElevationLayer: React.FC = () => {
             config = match
                 ? { type: 'custom' as const, customUrl: match.url, cesiumIonToken: tok.cesium_ion_token }
                 : { type: 'europe_copernicus' as const, cesiumIonToken: tok.cesium_ion_token, europeCopernicusUrl: getDefaultCopernicusUrl() };
-        } else if (!tok.provider_type || tok.provider_type === 'europe_copernicus') {
-            // Default / unset — host manages terrain (IGN/IDENA).
+        } else if (!tok.provider_type) {
+            // Unset — host manages terrain (IGN/IDENA).
             return;
+        } else if (tok.provider_type === 'europe_copernicus') {
+            config = { type: 'europe_copernicus' as const, cesiumIonToken: tok.cesium_ion_token, europeCopernicusUrl: getDefaultCopernicusUrl() };
         } else if (tok.provider_type === 'custom' && tok.custom_terrain_url) {
             config = { type: 'custom', customUrl: tok.custom_terrain_url };
         } else if (tok.provider_type === 'maptiler') {
