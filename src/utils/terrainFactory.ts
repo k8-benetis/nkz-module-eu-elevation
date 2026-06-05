@@ -110,11 +110,11 @@ function createCustomTerrain(url?: string): any {
 
 function createEuropeCopernicusTerrain(config: TerrainProviderConfig): any {
     // Copernicus GLO-30 tiles — self-hosted on platform MinIO (no Cesium Ion token needed).
-    // Falls through to ellipsoid if URL is not configured.
+    // If tiles aren't ingested yet, falls back to Cesium World Terrain (global, free).
     const url = config.europeCopernicusUrl;
     if (!url) {
-        console.warn('[Elevation] Europe Copernicus URL missing, falling back to ellipsoid');
-        return new Cesium.EllipsoidTerrainProvider();
+        console.warn('[Elevation] Europe Copernicus URL missing, falling back to Cesium World Terrain');
+        return createCesiumWorldTerrain(config.cesiumIonToken);
     }
     try {
         return new Cesium.CesiumTerrainProvider({
@@ -123,7 +123,7 @@ function createEuropeCopernicusTerrain(config: TerrainProviderConfig): any {
             requestWaterMask: false,
         });
     } catch (error) {
-        console.warn('[Elevation] Copernicus terrain failed, falling back to ellipsoid:', error);
-        return new Cesium.EllipsoidTerrainProvider();
+        console.warn('[Elevation] Copernicus terrain failed, falling back to Cesium World Terrain:', error);
+        return createCesiumWorldTerrain(config.cesiumIonToken);
     }
 }
