@@ -1,6 +1,7 @@
 {
   "name": "nkz-module-eu-elevation",
   "version": "1.0.0",
+  "packageManager": "pnpm@9.15.0",
   "description": "Nekazari EU Elevation Module",
   "license": "AGPL-3.0",
   "type": "module",
