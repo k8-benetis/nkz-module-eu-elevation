@@ -121,7 +121,7 @@ def _copernicus_tiles_for_bbox(bbox: tuple[float, float, float, float]) -> list[
                 f"Copernicus_DSM_COG_10_{lat_dir}{abs(lat):02d}_00_"
                 f"{lon_dir}{abs(lon):03d}_00_DEM"
             )
-            tiles.append(f"/vsis3/copernicus-dem-30m/{tile_name}/{tile_name}.tif")
+            tiles.append(f"/vsicurl/https://copernicus-dem-30m.s3.eu-central-1.amazonaws.com/{tile_name}/{tile_name}.tif")
     return tiles
 
 
