@@ -66,10 +66,8 @@ export const ElevationLayer: React.FC = () => {
         ]).then(([tok, layers]) => {
             tokensRef.current = tok;
             layersRef.current = layers || [];
-            // Only apply if the user has explicitly chosen a non-default provider.
-            // Default (europe_copernicus or unset) means "let the host decide" (IGN/IDENA).
-            const isExplicit = tok?.provider_type && tok.provider_type !== 'europe_copernicus';
-            if (viewer && isExplicit) {
+            // Apply the terrain provider — including europe_copernicus (Copernicus GLO-30).
+            if (viewer && tok) {
                 applyPreference(tok, layers || []);
             }
         });
