@@ -85,9 +85,14 @@ export const ElevationLayer: React.FC = () => {
 
         if (tok.provider_type === 'auto') {
             const match = findLayerByCameraPosition(layers);
-            config = match
-                ? { type: 'custom' as const, customUrl: match.url, cesiumIonToken: tok.cesium_ion_token }
-                : { type: 'europe_copernicus' as const, cesiumIonToken: tok.cesium_ion_token, europeCopernicusUrl: getDefaultCopernicusUrl() };
+            if (match) {
+                config = { type: 'custom' as const, customUrl: match.url, cesiumIonToken: tok.cesium_ion_token };
+            } else {
+                // No custom layer covers this area.  Let the host manage
+                // terrain (IGN/IDENA for Spain) instead of blindly
+                // activating Copernicus which may not be ingested yet.
+                return;
+            }
         } else if (!tok.provider_type) {
             // Unset — host manages terrain (IGN/IDENA).
             return;
