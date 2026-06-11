@@ -75,6 +75,17 @@ export const ElevationLayer: React.FC = () => {
 
     const lastAppliedRef = useRef<string>('');
 
+    const hasHostTerrain = useCallback((): boolean => {
+        if (!viewer) return false;
+        const tp = viewer.terrainProvider;
+        // If the host already loaded a real terrain (IGN/IDENA, Cesium World, MapTiler, etc.),
+        // don't replace it with a potentially lower-resolution provider.
+        // EllipsoidTerrainProvider means flat/disabled — safe to override.
+        if (!tp) return false;
+        const name = tp.constructor?.name || '';
+        return name !== 'EllipsoidTerrainProvider';
+    }, [viewer]);
+
     const applyPreference = useCallback((tok: TerrainTokens, layers: ElevationLayerConfig[]) => {
         if (!viewer) return;
         if (applyingRef.current) return; // Don't stack async terrain changes
@@ -97,6 +108,11 @@ export const ElevationLayer: React.FC = () => {
             // Unset — host manages terrain (IGN/IDENA).
             return;
         } else if (tok.provider_type === 'europe_copernicus') {
+            // Copernicus GLO-30 is a fallback — never replace better host terrain (IGN/IDENA).
+            if (hasHostTerrain()) {
+                console.log('[Elevation] Host terrain already active (IGN/IDENA) — keeping it instead of Copernicus 30m');
+                return;
+            }
             config = { type: 'europe_copernicus' as const, cesiumIonToken: tok.cesium_ion_token, europeCopernicusUrl: getDefaultCopernicusUrl() };
         } else if (tok.provider_type === 'custom' && tok.custom_terrain_url) {
             config = { type: 'custom', customUrl: tok.custom_terrain_url };
@@ -105,6 +121,11 @@ export const ElevationLayer: React.FC = () => {
         } else if (tok.provider_type === 'cesium_world') {
             if (!tok.cesium_ion_token) {
                 console.warn('[Elevation] Cesium World Terrain selected but no token configured — keeping current terrain');
+                return;
+            }
+            // Cesium World Terrain (global 30m) — also never replace better host terrain.
+            if (hasHostTerrain()) {
+                console.log('[Elevation] Host terrain already active — keeping it instead of Cesium World');
                 return;
             }
             config = { type: 'cesium_world', cesiumIonToken: tok.cesium_ion_token };
@@ -278,7 +299,12 @@ export const ElevationLayer: React.FC = () => {
                 if (viewer.scene.globe.tileLoadProgressEvent) {
                     viewer.scene.globe.tileLoadProgressEvent.removeEventListener(onTileLoadProgress);
                 }
-                viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+                // Only reset terrain if WE set it (Copernicus/MapTiler/Custom).
+                // If host terrain (IGN/IDENA) was active, leave it untouched.
+                if (activeProviderRef.current) {
+                    viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+                    activeProviderRef.current = null;
+                }
             }
         };
     }, [viewer, addCLCLayer, removeCLCLayer, updateCLCOpacity]);
