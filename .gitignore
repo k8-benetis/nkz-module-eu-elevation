@@ -12,6 +12,7 @@ dist/
 !LICENSE
 !CURRENT_STATE.md
 !CHANGELOG.md
+.worktrees/
 docs/superpowers/
 docs/internal/
 internal-docs/
