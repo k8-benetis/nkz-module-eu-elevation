@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: ghcr.io/nkz-os/nkz-module-eu-elevation/backend@sha256:7f84659a10a297e55d3b0938fa41de0ed6489b68319edecbea43c3e314607153
+          image: ghcr.io/nkz-os/nkz-module-eu-elevation/backend@sha256:5d34689632410dd7e96a58c7c4c39b3835c6b9f7f81676377c83b2ac4103665d
           imagePullPolicy: Always
           command:
             - uvicorn
@@ -117,7 +117,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: ghcr.io/nkz-os/nkz-module-eu-elevation/backend@sha256:7f84659a10a297e55d3b0938fa41de0ed6489b68319edecbea43c3e314607153
+          image: ghcr.io/nkz-os/nkz-module-eu-elevation/backend@sha256:5d34689632410dd7e96a58c7c4c39b3835c6b9f7f81676377c83b2ac4103665d
           imagePullPolicy: Always
           command:
             - celery
