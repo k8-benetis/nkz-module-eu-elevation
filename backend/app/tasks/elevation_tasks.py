@@ -35,14 +35,8 @@ except ImportError as e:
     HAS_ENCODERS = False
     logger.warning(f"C++ encoders not found ({e}). Must run inside Docker worker.")
 
-# S3 client (boto3) — lazy init
-try:
-    import boto3
-    from botocore.exceptions import ClientError as BotocoreClientError
-    HAS_S3 = True
-except ImportError:
-    HAS_S3 = False
-    logger.warning("boto3 not available — S3 upload disabled.")
+# S3 client (boto3) — lazy init via shared module
+from app.services.s3_client import get_s3_client, ensure_bucket, upload_bytes  # noqa: E402
 
 # Temporary working directory (ephemeral, cleaned after job)
 WORK_DIR = os.getenv("TERRAIN_WORK_DIR", "/tmp/terrain_work")
@@ -235,11 +229,75 @@ def _prepare_local_dem(
 # save locally, then build VRT from the local file.
 
 _WCS_PARAMS = {
+    # ── WCS 1.0.0 endpoints ──────────────────────────
     "ES": {
         "VERSION": "1.0.0",
         "FORMAT": "GEOTIFFINT16",
         "CRS": "EPSG:4326",
         "COVERAGE_PARAM": "COVERAGE",
+    },
+    "NL": {
+        # PDOK AHN — WCS 1.0.0 (v1_0 in URL)
+        "VERSION": "1.0.0",
+        "FORMAT": "GEOTIFFINT16",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGE",
+    },
+    "PL": {
+        # PZGIK NMT — WCS 1.0.0 likely
+        "VERSION": "1.0.0",
+        "FORMAT": "GEOTIFFINT16",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGE",
+    },
+    # ── WCS 2.0.1 endpoints (default version, explicit for clarity) ──
+    "DE": {
+        "VERSION": "2.0.1",
+        "FORMAT": "image/tiff",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGEID",
+    },
+    "AT": {
+        "VERSION": "2.0.1",
+        "FORMAT": "image/tiff",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGEID",
+    },
+    "CZ": {
+        "VERSION": "2.0.1",
+        "FORMAT": "image/tiff",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGEID",
+    },
+    "GB": {
+        "VERSION": "2.0.1",
+        "FORMAT": "image/tiff",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGEID",
+    },
+    "DK": {
+        "VERSION": "2.0.1",
+        "FORMAT": "image/tiff",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGEID",
+    },
+    "FI": {
+        "VERSION": "2.0.1",
+        "FORMAT": "image/tiff",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGEID",
+    },
+    "NO": {
+        "VERSION": "2.0.1",
+        "FORMAT": "image/tiff",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGEID",
+    },
+    "IT": {
+        "VERSION": "2.0.1",
+        "FORMAT": "image/tiff",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGEID",
     },
 }
 
@@ -349,58 +407,6 @@ def _prepare_dem_from_wcs(
     )
     tif_path = _download_wcs(url, work_dir, country_code.lower())
     return _prepare_local_dem(tif_path, bbox, work_dir)
-
-
-# =============================================================================
-# S3 Upload (boto3)
-# =============================================================================
-
-_s3_client = None
-
-
-def _get_s3_client():
-    """Create or return cached boto3 S3 client for MinIO-compatible storage."""
-    global _s3_client
-    if _s3_client is not None:
-        return _s3_client
-    if not HAS_S3:
-        raise RuntimeError("boto3 not installed")
-    if not MINIO_ACCESS_KEY or not MINIO_SECRET_KEY:
-        raise RuntimeError("MINIO_ACCESS_KEY and MINIO_SECRET_KEY must be set")
-
-    protocol = "https" if MINIO_SECURE else "http"
-    _s3_client = boto3.client(
-        "s3",
-        endpoint_url=f"{protocol}://{MINIO_ENDPOINT}",
-        aws_access_key_id=MINIO_ACCESS_KEY,
-        aws_secret_access_key=MINIO_SECRET_KEY,
-        config=boto3.session.Config(signature_version="s3v4"),
-        region_name="us-east-1",
-    )
-    logger.info(f"S3 client initialised ({MINIO_ENDPOINT})")
-    return _s3_client
-
-
-def _ensure_bucket(client, bucket: str) -> None:
-    """Ensure the target bucket exists (idempotent)."""
-    try:
-        client.head_bucket(Bucket=bucket)
-    except BotocoreClientError as e:
-        if e.response.get("Error", {}).get("Code") in ("404", "NoSuchBucket"):
-            client.create_bucket(Bucket=bucket)
-            logger.info(f"Created S3 bucket: {bucket}")
-        else:
-            raise
-
-
-def _upload_bytes(client, bucket: str, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
-    """Upload bytes to S3."""
-    client.put_object(
-        Bucket=bucket,
-        Key=key,
-        Body=data,
-        ContentType=content_type,
-    )
 
 
 # =============================================================================
@@ -678,8 +684,8 @@ def process_dem_to_quantized_mesh(
 
         # Phase 2: Initialize S3 client
         self.update_state(state='PROCESSING', meta={'progress': 10, 'message': 'Connecting to object storage...'})
-        s3_client = _get_s3_client()
-        _ensure_bucket(s3_client, MINIO_BUCKET)
+        s3_client = get_s3_client()
+        ensure_bucket(s3_client, MINIO_BUCKET)
         base_key = f"terrain/{country_code}"
 
         # Phase 3: Calculate total tiles for progress tracking
@@ -717,7 +723,7 @@ def process_dem_to_quantized_mesh(
 
                     if tile_data:
                         object_key = f"{base_key}/{z}/{col}/{row}.terrain"
-                        _upload_bytes(
+                        upload_bytes(
                             s3_client,
                             MINIO_BUCKET,
                             object_key,
@@ -735,7 +741,7 @@ def process_dem_to_quantized_mesh(
         layer_json = _generate_layer_json(bbox, available_tiles, (zoom_min, zoom_max))
         layer_json_bytes = json.dumps(layer_json, indent=2).encode("utf-8")
 
-        _upload_bytes(
+        upload_bytes(
             s3_client,
             MINIO_BUCKET,
             f"{base_key}/layer.json",
@@ -826,8 +832,8 @@ def process_local_dem_to_quantized_mesh(
             logger.info(f"[{country_code}] Extracted BBOX from dataset: {bbox}")
 
         # Initialize S3 client
-        s3_client = _get_s3_client()
-        _ensure_bucket(s3_client, MINIO_BUCKET)
+        s3_client = get_s3_client()
+        ensure_bucket(s3_client, MINIO_BUCKET)
         base_key = f"terrain/{country_code}"
 
         # Calculate tiles
@@ -861,7 +867,7 @@ def process_local_dem_to_quantized_mesh(
                     tile_data = _process_tile(ds, z, col, row, max_error=max_error)
                     if tile_data:
                         object_key = f"{base_key}/{z}/{col}/{row}.terrain"
-                        _upload_bytes(s3_client, MINIO_BUCKET, object_key, tile_data,
+                        upload_bytes(s3_client, MINIO_BUCKET, object_key, tile_data,
                                       content_type="application/vnd.quantized-mesh")
                         available_tiles[z].append((col, row))
                     else:
@@ -871,7 +877,7 @@ def process_local_dem_to_quantized_mesh(
         # Generate layer.json
         self.update_state(state='PROCESSING', meta={'progress': 95, 'message': 'Generating metadata...'})
         layer_json = _generate_layer_json(bbox, available_tiles, (zoom_min, zoom_max))
-        _upload_bytes(
+        upload_bytes(
             s3_client, MINIO_BUCKET,
             f"{base_key}/layer.json",
             json.dumps(layer_json, indent=2).encode("utf-8"),

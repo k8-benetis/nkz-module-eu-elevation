@@ -6,6 +6,7 @@ logger = logging.getLogger(__name__)
 
 # Known-good WCS 1.0.0 parameters per country
 WCS_PARAMS: dict[str, dict] = {
+    # ── WCS 1.0.0 endpoints ──────────────────────────
     "ES": {
         "VERSION": "1.0.0",
         "FORMAT": "GEOTIFFINT16",
@@ -13,7 +14,27 @@ WCS_PARAMS: dict[str, dict] = {
         "COVERAGE_PARAM": "COVERAGE",
         "BBOX_ORDER": "lonlat",  # lon,lat in BBOX
     },
-    # Default: WCS 2.0.1
+    "NL": {
+        "VERSION": "1.0.0",
+        "FORMAT": "GEOTIFFINT16",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGE",
+    },
+    "PL": {
+        "VERSION": "1.0.0",
+        "FORMAT": "GEOTIFFINT16",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGE",
+    },
+    # ── WCS 2.0.1 endpoints (explicit; defaults also work) ──
+    "DE": {"VERSION": "2.0.1"},
+    "AT": {"VERSION": "2.0.1"},
+    "CZ": {"VERSION": "2.0.1"},
+    "GB": {"VERSION": "2.0.1"},
+    "DK": {"VERSION": "2.0.1"},
+    "FI": {"VERSION": "2.0.1"},
+    "NO": {"VERSION": "2.0.1"},
+    "IT": {"VERSION": "2.0.1"},
 }
 
 

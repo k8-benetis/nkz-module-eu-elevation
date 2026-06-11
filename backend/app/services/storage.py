@@ -2,16 +2,16 @@
 MinIO/S3 Storage Service for EU Elevation Module.
 
 Handles uploading and managing terrain tiles and related assets.
+The underlying boto3 client is provided by the shared s3_client module.
 """
 
 import logging
 from typing import Optional, BinaryIO
 from pathlib import Path
-import boto3
-from botocore.client import Config
 from botocore.exceptions import ClientError
 
 from app.config import settings
+from app.services.s3_client import get_s3_client, ensure_bucket
 
 logger = logging.getLogger(__name__)
 
@@ -32,33 +32,36 @@ class StorageService:
     
     @property
     def client(self):
-        """Lazy-init boto3 client to avoid failures during import."""
+        """Lazy-init boto3 client via the shared s3_client module.
+
+        Delegates to get_s3_client() which handles singleton caching,
+        thread safety, and credential resolution from environment.
+        """
         if self._client is None:
-            self._client = boto3.client(
-                's3',
-                endpoint_url=f"{'https' if settings.MINIO_SECURE else 'http'}://{settings.MINIO_ENDPOINT}",
-                aws_access_key_id=settings.MINIO_ACCESS_KEY,
-                aws_secret_access_key=settings.MINIO_SECRET_KEY,
-                config=Config(signature_version='s3v4'),
-                region_name='us-east-1',
-            )
+            self._client = get_s3_client()
             self._ensure_bucket()
         return self._client
     
     def _ensure_bucket(self):
-        """Ensure the bucket exists."""
+        """Ensure the bucket exists (idempotent), then set public-read policy.
+
+        Delegates the bucket-existence check to the shared ensure_bucket
+        helper, then applies the public-read policy on newly created buckets.
+        """
+        existed = True
         try:
             self.client.head_bucket(Bucket=self.bucket)
-            logger.debug(f"Bucket {self.bucket} exists")
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', '')
             if error_code in ('404', 'NoSuchBucket'):
-                logger.info(f"Creating bucket {self.bucket}")
-                self.client.create_bucket(Bucket=self.bucket)
-                # Set public read policy for tilesets
-                self._set_public_read_policy()
+                existed = False
             else:
                 raise
+
+        ensure_bucket(self.client, self.bucket)
+
+        if not existed:
+            self._set_public_read_policy()
     
     def _set_public_read_policy(self):
         """Set bucket policy to allow public read access."""
