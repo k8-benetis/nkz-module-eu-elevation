@@ -1,4 +1,4 @@
-# Multi-stage build for LIDAR Module Frontend
+# Multi-stage build for EU Elevation Module Frontend (local dev / standalone deploy)
 # Stage 1: Build with Vite + Module Federation
 FROM node:20-alpine AS builder
 

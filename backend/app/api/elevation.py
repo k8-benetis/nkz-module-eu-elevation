@@ -854,15 +854,16 @@ async def get_elevation_point(
     lon: float,
     purpose: PurposeEnum = PurposeEnum.auto,
     source: str = "auto",
+    refresh: bool = Query(False, description="Bypass cache and fetch fresh from WCS"),
 ):
-    """Return elevation (meters) for a single WGS84 point. Cached 24h in Redis."""
+    """Return elevation (meters) for a single WGS84 point. Cached 1h in Redis."""
     lat_r = round(lat, 5)
     lon_r = round(lon, 5)
 
-    # Cache check
+    # Cache check (skip if refresh requested)
     r = await _get_redis()
     cache_key = f"elev:{lat_r}:{lon_r}"
-    if r:
+    if r and not refresh:
         cached = await _cache_get(r, cache_key)
         if cached:
             return cached
@@ -923,7 +924,7 @@ async def get_elevation_point(
 
     # Cache for 24h (non-fatal if Redis is down)
     if r:
-        await _cache_set(r, cache_key, result)
+        await _cache_set(r, cache_key, result, ttl=3600)
 
     return result
 
