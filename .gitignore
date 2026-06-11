@@ -13,6 +13,7 @@ dist/
 !CURRENT_STATE.md
 !CHANGELOG.md
 .worktrees/
+.venv/
 docs/superpowers/
 docs/internal/
 internal-docs/
