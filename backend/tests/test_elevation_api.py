@@ -18,11 +18,32 @@ client = TestClient(app)
 class TestPointEndpoint:
 
     @patch("app.api.elevation._get_redis", new_callable=AsyncMock)
+    @patch("rasterio.open")
+    @patch("httpx.AsyncClient.get")
     @patch("app.api.elevation.resolve_source")
-    def test_point_with_purpose_param_accepted(self, mock_resolve, mock_redis):
+    def test_point_with_purpose_param_accepted(self, mock_resolve, mock_get, mock_rasterio_open, mock_redis):
         """Point endpoint accepts the 'purpose' query parameter."""
         mock_redis.return_value = None
-        mock_resolve.return_value = None
+        # Must return a valid DEMSource (not None) or endpoint returns 404
+        from app.dem_sources import DEMSource
+        mock_resolve.return_value = DEMSource(
+            country_code="ES", country_name="España",
+            service_url="https://test.example.com/wcs",
+            service_type="WCS", format="GEOTIFFINT16",
+            resolution="500m", bbox=(-18.2, 27.6, 4.4, 43.8),
+            layer_name="Elevacion4326_500",
+        )
+        # Mock HTTP response
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.content = b'fake_tiff_bytes'
+        mock_get.return_value = mock_resp
+        # Mock rasterio: return synthetic elevation value
+        mock_dataset = MagicMock()
+        mock_dataset.read.return_value = MagicMock()
+        mock_dataset.__getitem__.return_value = 642.5  # elevation_m in meters
+        mock_dataset.__enter__.return_value = mock_dataset
+        mock_rasterio_open.return_value = mock_dataset
 
         resp = client.get("/api/elevation/point?lat=42.817&lon=-1.642&purpose=auto")
         assert resp.status_code == 200

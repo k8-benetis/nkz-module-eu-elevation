@@ -75,13 +75,15 @@ class TestTilingMath:
 class TestCopernicusEnumeration:
 
     def test_single_tile_bbox(self):
-        """A 1°×1° BBOX returns exactly one Copernicus tile."""
-        # London area: ~51.5°N, 0.1°W → tile 51_0
+        """A 1°×1° BBOX straddling tile boundaries returns the intersecting tiles."""
+        # London area: ~51.5°N, 0.1°W → lat 51-52, lon -1 to 0+1
+        # BBOX (-0.5, 51.0, 0.5, 52.0) touches 4 tiles:
+        #   N51W001, N51E000, N52W001, N52E000
         bbox = (-0.5, 51.0, 0.5, 52.0)
         tiles = _copernicus_tiles_for_bbox(bbox)
-        assert len(tiles) == 1
-        assert "N51" in tiles[0]
-        assert "W001" in tiles[0] or "E000" in tiles[0] or "W000" in tiles[0]
+        assert len(tiles) == 4
+        assert any("N51" in t for t in tiles)
+        assert any("W001" in t for t in tiles)
 
     def test_crossing_equator(self):
         """BBOX crossing the equator returns N and S tiles."""
