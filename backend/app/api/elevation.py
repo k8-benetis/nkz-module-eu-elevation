@@ -19,6 +19,7 @@ from typing import List, Optional
 import httpx
 import rasterio
 from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, UploadFile, File, Form
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from app.middleware.auth import require_auth, get_tenant_id
@@ -32,6 +33,7 @@ from app.common.crypto import encrypt_token, decrypt_token
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.elevation_models import ElevationLayer, CustomDemSource, TenantTerrainPreferences
+import json
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -239,8 +241,46 @@ class TerrainProviderInfo(BaseModel):
 
 @router.get("/health")
 async def router_health_check():
-    """Health check accessible via ingress /api/elevation/health."""
-    return {"status": "healthy", "module": "eu-elevation", "version": "1.0.0"}
+    """Health check accessible via ingress /api/elevation/health.
+
+    Verifies connectivity to MinIO (terrain tile storage) and reports
+    available tilesets. Returns 200 with dependency status — the pod
+    remains live even if MinIO is down (degraded mode).
+    """
+    deps = {"minio": "unknown", "redis": "unknown"}
+    tilesets = []
+
+    # MinIO connectivity check
+    try:
+        s3 = _get_terrain_minio()
+        if s3:
+            bucket = os.getenv("MINIO_BUCKET", "terrain-tilesets")
+            s3.head_bucket(Bucket=bucket)
+            deps["minio"] = "ok"
+            tilesets = _list_available_tilesets(s3, bucket)
+        else:
+            deps["minio"] = "not_configured"
+    except Exception as e:
+        deps["minio"] = f"error: {e}"
+
+    # Redis connectivity check
+    try:
+        r = await _get_redis()
+        if r:
+            await r.ping()
+            deps["redis"] = "ok"
+        else:
+            deps["redis"] = "not_configured"
+    except Exception as e:
+        deps["redis"] = f"error: {e}"
+
+    return {
+        "status": "healthy",
+        "module": "eu-elevation",
+        "version": "1.0.0",
+        "dependencies": deps,
+        "available_tilesets": tilesets,
+    }
 
 
 # ============================================================================
@@ -827,72 +867,62 @@ async def get_elevation_point(
         if cached:
             return cached
 
-    # Static test data for well-known locations (WCS fallback)
-    if lat_r == 42.817 and lon_r == -1.642:
-        result = {"lat": lat, "lon": lon, "elevation_m": 450.0,
-                  "source": {"id": "static:test", "name": "Static test data", "category": "static",
-                             "is_bare_earth": True, "accuracy_v_m": None, "resolution_m": 5}}
-    elif lat_r == 42.0 and lon_r == -1.0:
-        result = {"lat": lat, "lon": lon, "elevation_m": 300.0,
-                  "source": {"id": "static:test", "name": "Static test data", "category": "static",
-                             "is_bare_earth": True, "accuracy_v_m": None, "resolution_m": 5}}
+    if source == "auto":
+        dem = resolve_source(lat, lon)
+    elif source == "cnig":
+        from app.dem_sources import get_source
+        dem = get_source("ES")
+    elif source == "copernicus":
+        from app.dem_sources import get_source
+        dem = get_source("EU")
     else:
-        if source == "auto":
-            dem = resolve_source(lat, lon)
-        elif source == "cnig":
-            from app.dem_sources import get_source
-            dem = get_source("ES")
-        elif source == "copernicus":
-            from app.dem_sources import get_source
-            dem = get_source("EU")
-        else:
-            raise HTTPException(status_code=400, detail=f"Unknown source: {source}")
+        raise HTTPException(status_code=400, detail=f"Unknown source: {source}")
 
-        if not dem:
-            raise HTTPException(status_code=404, detail={
-                "error": "no_dem_coverage",
-                "message": f"Point ({lon}, {lat}) outside all DEM coverage areas"
-            })
+    if not dem:
+        raise HTTPException(status_code=404, detail={
+            "error": "no_dem_coverage",
+            "message": f"Point ({lon}, {lat}) outside all DEM coverage areas"
+        })
 
-        url = build_wcs_url(dem, lat, lon)
+    url = build_wcs_url(dem, lat, lon)
 
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers={"User-Agent": "Nekazari/2.0"})
-                resp.raise_for_status()
-        except httpx.HTTPError as e:
-            logger.error("WCS query failed for %s (%s, %s): %s", dem.country_code, lat, lon, e)
-            raise HTTPException(status_code=502, detail={
-                "error": "wcs_unavailable",
-                "message": f"DEM source {dem.country_code} unreachable"
-            })
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers={"User-Agent": "Nekazari/2.0"})
+            resp.raise_for_status()
+    except httpx.HTTPError as e:
+        logger.error("WCS query failed for %s (%s, %s): %s", dem.country_code, lat, lon, e)
+        raise HTTPException(status_code=502, detail={
+            "error": "wcs_unavailable",
+            "message": f"DEM source {dem.country_code} unreachable"
+        })
 
-        try:
-            with rasterio.open(io.BytesIO(resp.content)) as ds:
-                elevation = float(ds.read(1)[0, 0])
-        except Exception as e:
-            logger.error("Failed to parse GeoTIFF from %s: %s", dem.country_code, e)
-            raise HTTPException(status_code=502, detail={
-                "error": "invalid_response",
-                "message": f"Could not parse elevation data from {dem.country_code}"
-            })
+    try:
+        with rasterio.open(io.BytesIO(resp.content)) as ds:
+            elevation = float(ds.read(1)[0, 0])
+    except Exception as e:
+        logger.error("Failed to parse GeoTIFF from %s: %s", dem.country_code, e)
+        raise HTTPException(status_code=502, detail={
+            "error": "invalid_response",
+            "message": f"Could not parse elevation data from {dem.country_code}"
+        })
 
-        result = {
-            "lat": lat,
-            "lon": lon,
-            "elevation_m": round(elevation, 2),
-            "source": {
-                "id": f"builtin:{dem.country_code}",
-                "name": dem.country_name,
-                "category": f"custom_wcs:{dem.country_code}",
-                "is_bare_earth": True,
-                "accuracy_v_m": None,
-                "resolution_m": int(dem.resolution.replace("m", "")) if dem.resolution else None,
-            },
-        }
+    result = {
+        "lat": lat,
+        "lon": lon,
+        "elevation_m": round(elevation, 2),
+        "source": {
+            "id": f"builtin:{dem.country_code}",
+            "name": dem.country_name,
+            "category": f"custom_wcs:{dem.country_code}",
+            "is_bare_earth": True,
+            "accuracy_v_m": None,
+            "resolution_m": int(dem.resolution.replace("m", "")) if dem.resolution else None,
+        },
+    }
 
     # Cache for 24h (non-fatal if Redis is down)
-    if r and result.get("source", {}).get("id") != "static:test":
+    if r:
         await _cache_set(r, cache_key, result)
 
     return result
@@ -1004,3 +1034,163 @@ async def get_elevation_raster(
             "resolution_m": _parse_resolution(dem.resolution),
         },
     }
+
+
+# ============================================================================
+# Terrain Tile Serving (Quantized Mesh from MinIO → Cesium)
+# ============================================================================
+# Serves pre-ingested Cesium Quantized Mesh tiles (.terrain) and layer.json
+# from the terrain-tilesets MinIO bucket. Tiles are generated by the elevation
+# worker (Celery tasks) and uploaded by process_dem_to_quantized_mesh.
+
+import botocore.exceptions as boto_exc  # noqa: E402 (import after usage above)
+
+
+# ---------------------------------------------------------------------------
+# MinIO client (lazy init, shared across tile requests)
+# ---------------------------------------------------------------------------
+_minio_terrain_client = None
+
+
+def _get_terrain_minio():
+    """Lazy-init boto3 S3 client for terrain tile serving.
+
+    Reuses the same MinIO credentials configured in the deployment env:
+      MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
+    Falls back gracefully if MinIO is unreachable.
+    """
+    global _minio_terrain_client
+    if _minio_terrain_client is not None:
+        return _minio_terrain_client
+    try:
+        import boto3
+        endpoint = os.getenv("MINIO_ENDPOINT", "minio-service:9000")
+        _minio_terrain_client = boto3.client(
+            "s3",
+            endpoint_url=f"http://{endpoint}",
+            aws_access_key_id=os.getenv("MINIO_ACCESS_KEY", ""),
+            aws_secret_access_key=os.getenv("MINIO_SECRET_KEY", ""),
+            config=boto3.session.Config(signature_version="s3v4"),
+            region_name="us-east-1",
+        )
+        logger.info(f"Terrain tile MinIO client initialised ({endpoint})")
+    except Exception as e:
+        logger.warning(f"Could not initialise terrain tile MinIO client: {e}")
+        _minio_terrain_client = False
+    return _minio_terrain_client
+
+
+@router.get("/terrain/{country}/layer.json")
+async def get_terrain_layer_json(country: str):
+    """Serve the Cesium layer.json for an ingested terrain tileset.
+
+    The layer.json declares available zoom levels, tile ranges, and the
+    tile URL template. Cesium fetches this first to discover the tileset.
+
+    Tileset names correspond to the 'country_code' used during ingestion:
+      ES       → Spain (IGN PNOA or Copernicus fallback)
+      EU_56_-7 → Copernicus GLO-30 single tile (Scotland, lat 56 lon -7)
+      EU       → Full pan-European Copernicus GLO-30 (if ingested via bootstrap)
+    """
+    s3 = _get_terrain_minio()
+    if not s3:
+        raise HTTPException(status_code=503, detail="Object storage unavailable")
+
+    bucket = os.getenv("MINIO_BUCKET", "terrain-tilesets")
+    key = f"terrain/{country}/layer.json"
+
+    try:
+        resp = s3.get_object(Bucket=bucket, Key=key)
+        data = resp["Body"].read()
+        return JSONResponse(
+            content=json.loads(data),
+            media_type="application/json",
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=3600",
+            },
+        )
+    except boto_exc.ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code == "NoSuchKey":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "tileset_not_found",
+                    "message": (
+                        f"No terrain tileset found for '{country}'. "
+                        f"Ingest terrain first via POST /api/elevation/ingest "
+                        f"or run the Copernicus bootstrap script."
+                    ),
+                    "available_tilesets": _list_available_tilesets(s3, bucket),
+                },
+            )
+        logger.error(f"MinIO error serving {key}: {e}")
+        raise HTTPException(status_code=502, detail="Object storage error")
+    except Exception as e:
+        logger.error(f"Error serving {key}: {e}")
+        raise HTTPException(status_code=500, detail="Internal error fetching terrain metadata")
+
+
+@router.get("/terrain/{country}/{z}/{x}/{y}.terrain")
+async def get_terrain_tile(
+    country: str,
+    z: int,
+    x: int,
+    y: int,
+):
+    """Serve a single Cesium Quantized Mesh terrain tile.
+
+    Cesium fetches tiles on-demand as the camera moves. Each tile is a
+    gzip-compressed Quantized Mesh binary covering one tile at the given
+    zoom level in the TMS geographic scheme (EPSG:4326).
+
+    The tile coordinates (z/x/y) follow the Cesium Geographic Tiling scheme:
+      - (0, 0, 0) at zoom 0 covers the whole world
+      - x = column (0 = westmost), y = row (0 = southmost)
+    """
+    s3 = _get_terrain_minio()
+    if not s3:
+        raise HTTPException(status_code=503, detail="Object storage unavailable")
+
+    bucket = os.getenv("MINIO_BUCKET", "terrain-tilesets")
+    key = f"terrain/{country}/{z}/{x}/{y}.terrain"
+
+    try:
+        resp = s3.get_object(Bucket=bucket, Key=key)
+        data = resp["Body"].read()
+        return Response(
+            content=data,
+            media_type="application/vnd.quantized-mesh",
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=86400, immutable",
+                "Content-Encoding": "gzip",
+            },
+        )
+    except boto_exc.ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code == "NoSuchKey":
+            # Tile not generated for this Z/X/Y — return 204 so Cesium
+            # doesn't retry aggressively (standard terrain empty-tile).
+            return Response(status_code=204)
+        logger.error(f"MinIO error serving tile {key}: {e}")
+        raise HTTPException(status_code=502, detail="Object storage error")
+    except Exception as e:
+        logger.error(f"Error serving tile {key}: {e}")
+        raise HTTPException(status_code=500, detail="Internal error fetching terrain tile")
+
+
+def _list_available_tilesets(s3, bucket: str) -> list[str]:
+    """List available terrain tilesets in MinIO for user guidance."""
+    try:
+        resp = s3.list_objects_v2(
+            Bucket=bucket, Prefix="terrain/", Delimiter="/"
+        )
+        prefixes = resp.get("CommonPrefixes", [])
+        return [
+            p["Prefix"].replace("terrain/", "").strip("/")
+            for p in prefixes
+        ]
+    except Exception:
+        return []
