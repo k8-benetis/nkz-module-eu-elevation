@@ -14,10 +14,26 @@ class Settings(BaseSettings):
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 
     # Redis (for Celery task queue + elevation point cache)
-    REDIS_URL: str = "redis://redis-service:6379/0"
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://redis-service:6379/0")
+    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
 
     # Encryption key for sensitive DB columns (Fernet symmetric)
     ELEVATION_ENCRYPTION_KEY: str = os.getenv("ELEVATION_ENCRYPTION_KEY", "")
+
+    @property
+    def effective_redis_url(self) -> str:
+        """Redis URL with password injected if REDIS_PASSWORD is set.
+        
+        If REDIS_URL already contains a password, REDIS_PASSWORD is ignored.
+        Otherwise, the password is inserted into the URL.
+        """
+        url = self.REDIS_URL
+        if self.REDIS_PASSWORD and "@" not in url.split("://", 1)[-1]:
+            # No password in URL — inject REDIS_PASSWORD
+            if "://" in url:
+                scheme, rest = url.split("://", 1)
+                url = f"{scheme}://:{self.REDIS_PASSWORD}@{rest}"
+        return url
 
     # MinIO / S3 Storage — NO hardcoded credentials (public repo)
     MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "minio:9000")

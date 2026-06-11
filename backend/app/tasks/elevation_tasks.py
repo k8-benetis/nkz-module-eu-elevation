@@ -8,7 +8,7 @@ Pipeline:
 1. Download/prepare DEM data via GDAL (VRT mosaic, reprojection)
 2. Calculate tile grid for each zoom level intersecting the BBOX
 3. For each tile: extract raster window → decimate mesh → encode quantized mesh → gzip
-4. Upload tiles to MinIO via S3 API
+4. Upload tiles to S3 via boto3
 5. Generate layer.json with available tile ranges
 """
 
@@ -35,13 +35,14 @@ except ImportError as e:
     HAS_ENCODERS = False
     logger.warning(f"C++ encoders not found ({e}). Must run inside Docker worker.")
 
-# MinIO/S3 client — lazy init
+# S3 client (boto3) — lazy init
 try:
-    from minio import Minio
-    HAS_MINIO = True
+    import boto3
+    from botocore.exceptions import ClientError as BotocoreClientError
+    HAS_S3 = True
 except ImportError:
-    HAS_MINIO = False
-    logger.warning("minio package not available — S3 upload disabled.")
+    HAS_S3 = False
+    logger.warning("boto3 not available — S3 upload disabled.")
 
 # Temporary working directory (ephemeral, cleaned after job)
 WORK_DIR = os.getenv("TERRAIN_WORK_DIR", "/tmp/terrain_work")
@@ -226,39 +227,179 @@ def _prepare_local_dem(
 
 
 # =============================================================================
-# MinIO S3 Upload
+# WCS National Source Downloader
+# =============================================================================
+# Downloads elevation data from national WCS endpoints (used by point/raster
+# endpoints) for ingestion into the terrain tile pipeline. WCS endpoints
+# return GeoTIFF via GetCoverage — we download the full country BBOX,
+# save locally, then build VRT from the local file.
+
+_WCS_PARAMS = {
+    "ES": {
+        "VERSION": "1.0.0",
+        "FORMAT": "GEOTIFFINT16",
+        "CRS": "EPSG:4326",
+        "COVERAGE_PARAM": "COVERAGE",
+    },
+}
+
+
+def _build_wcs_getcoverage_url(
+    service_url: str,
+    layer_name: str,
+    bbox: tuple[float, float, float, float],
+    resolution_m: float = 25.0,
+    country_code: str = "",
+) -> str:
+    """Build a WCS GetCoverage URL for a full BBOX query.
+
+    Supports WCS 1.0.0 (e.g., ES/IGN) and WCS 2.0.1 (default).
+    Returns the full URL string.
+    """
+    params = _WCS_PARAMS.get(country_code, {})
+    version = params.get("VERSION", "2.0.1")
+    west, south, east, north = bbox
+    pixel_size_deg = resolution_m / 111320.0
+    width = max(2, int(round((east - west) / pixel_size_deg)))
+    height = max(2, int(round((north - south) / pixel_size_deg)))
+
+    if version == "1.0.0":
+        fmt = params.get("FORMAT", "GEOTIFFINT16")
+        crs = params.get("CRS", "EPSG:4326")
+        coverage_param = params.get("COVERAGE_PARAM", "COVERAGE")
+        coverage = layer_name or "elevation"
+        bbox_str = f"{west},{south},{east},{north}"
+        return (
+            f"{service_url}?"
+            f"SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage&"
+            f"{coverage_param}={coverage}&FORMAT={fmt}&"
+            f"BBOX={bbox_str}&CRS={crs}&WIDTH={width}&HEIGHT={height}"
+        )
+    else:
+        coverage = layer_name or "elevation"
+        return (
+            f"{service_url}?"
+            f"SERVICE=WCS&VERSION=2.0.1&REQUEST=GetCoverage&"
+            f"COVERAGEID={coverage}&FORMAT=image/tiff&"
+            f"SUBSET=Long({west},{east})&SUBSET=Lat({south},{north})"
+        )
+
+
+def _download_wcs(
+    url: str,
+    work_dir: str,
+    label: str,
+    timeout: int = 120,
+) -> str:
+    """Download GeoTIFF from a WCS endpoint to a local file.
+
+    Returns the local file path. Raises RuntimeError on failure.
+    """
+    import requests as http_requests
+
+    out_path = os.path.join(work_dir, f"{label}_dem.tif")
+    logger.info(f"Downloading WCS DEM: {url[:120]}...")
+
+    try:
+        resp = http_requests.get(url, timeout=timeout, stream=True)
+        resp.raise_for_status()
+    except http_requests.RequestException as e:
+        raise RuntimeError(f"WCS download failed ({label}): {e}")
+
+    # Basic validation — check Content-Type suggests GeoTIFF or XML
+    content_type = resp.headers.get("Content-Type", "")
+    if "xml" in content_type.lower() and "image" not in content_type.lower():
+        # WCS returned XML error (e.g., ServiceExceptionReport)
+        body_snippet = resp.text[:500] if resp.text else "(empty)"
+        raise RuntimeError(
+            f"WCS returned XML/error for {label} (Content-Type: {content_type}). "
+            f"Response: {body_snippet}"
+        )
+
+    with open(out_path, "wb") as f:
+        for chunk in resp.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+    file_size = os.path.getsize(out_path)
+    if file_size < 1024:
+        raise RuntimeError(f"WCS download too small ({file_size} bytes) for {label}")
+
+    logger.info(f"WCS download complete: {out_path} ({file_size / 1024 / 1024:.1f} MB)")
+    return out_path
+
+
+def _prepare_dem_from_wcs(
+    service_url: str,
+    layer_name: str,
+    bbox: tuple[float, float, float, float],
+    work_dir: str,
+    country_code: str = "",
+    resolution_m: float = 25.0,
+) -> str:
+    """Download DEM from a WCS endpoint and prepare VRT for processing.
+
+    1. Builds WCS GetCoverage URL for the full country BBOX
+    2. Downloads GeoTIFF locally
+    3. Reprojects to EPSG:4326 VRT (via _prepare_local_dem)
+
+    Returns path to the EPSG:4326 VRT.
+    """
+    url = _build_wcs_getcoverage_url(
+        service_url, layer_name, bbox, resolution_m, country_code
+    )
+    tif_path = _download_wcs(url, work_dir, country_code.lower())
+    return _prepare_local_dem(tif_path, bbox, work_dir)
+
+
+# =============================================================================
+# S3 Upload (boto3)
 # =============================================================================
 
-def _get_minio_client() -> "Minio":
-    """Create MinIO client from environment configuration."""
-    if not HAS_MINIO:
-        raise RuntimeError("minio package not installed")
+_s3_client = None
+
+
+def _get_s3_client():
+    """Create or return cached boto3 S3 client for MinIO-compatible storage."""
+    global _s3_client
+    if _s3_client is not None:
+        return _s3_client
+    if not HAS_S3:
+        raise RuntimeError("boto3 not installed")
     if not MINIO_ACCESS_KEY or not MINIO_SECRET_KEY:
         raise RuntimeError("MINIO_ACCESS_KEY and MINIO_SECRET_KEY must be set")
 
-    return Minio(
-        MINIO_ENDPOINT,
-        access_key=MINIO_ACCESS_KEY,
-        secret_key=MINIO_SECRET_KEY,
-        secure=MINIO_SECURE
+    protocol = "https" if MINIO_SECURE else "http"
+    _s3_client = boto3.client(
+        "s3",
+        endpoint_url=f"{protocol}://{MINIO_ENDPOINT}",
+        aws_access_key_id=MINIO_ACCESS_KEY,
+        aws_secret_access_key=MINIO_SECRET_KEY,
+        config=boto3.session.Config(signature_version="s3v4"),
+        region_name="us-east-1",
     )
+    logger.info(f"S3 client initialised ({MINIO_ENDPOINT})")
+    return _s3_client
 
 
-def _ensure_bucket(client: "Minio", bucket: str) -> None:
-    """Ensure the target bucket exists."""
-    if not client.bucket_exists(bucket):
-        client.make_bucket(bucket)
-        logger.info(f"Created MinIO bucket: {bucket}")
+def _ensure_bucket(client, bucket: str) -> None:
+    """Ensure the target bucket exists (idempotent)."""
+    try:
+        client.head_bucket(Bucket=bucket)
+    except BotocoreClientError as e:
+        if e.response.get("Error", {}).get("Code") in ("404", "NoSuchBucket"):
+            client.create_bucket(Bucket=bucket)
+            logger.info(f"Created S3 bucket: {bucket}")
+        else:
+            raise
 
 
-def _upload_bytes(client: "Minio", bucket: str, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
-    """Upload bytes to MinIO."""
+def _upload_bytes(client, bucket: str, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
+    """Upload bytes to S3."""
     client.put_object(
-        bucket,
-        key,
-        io.BytesIO(data),
-        length=len(data),
-        content_type=content_type
+        Bucket=bucket,
+        Key=key,
+        Body=data,
+        ContentType=content_type,
     )
 
 
@@ -405,17 +546,22 @@ def process_dem_to_quantized_mesh(
     zoom_max: int = 14,
     max_error: float = 0.5,
     _is_fallback: bool = False,
-    _original_error: str = ""
+    _original_error: str = "",
+    # ── National WCS source parameters (optional) ──
+    _wcs_service_url: str = "",
+    _wcs_layer_name: str = "",
+    _wcs_resolution_m: float = 25.0,
 ):
     """
     SOTA ETL Pipeline for EU Elevation Processing (Selective BBOX Ingestion).
 
-    1. Build VRT mosaic restricted to BBOX
-    2. Reproject to EPSG:4326
-    3. For each zoom level, calculate intersecting tiles
-    4. For each tile: extract → decimate → encode → gzip
-    5. Upload to MinIO via S3 API
-    6. Generate and upload layer.json
+    1. For national WCS sources: download GeoTIFF via GetCoverage → build VRT
+    2. For Copernicus: build VRT from S3 COG tiles
+    3. Reproject to EPSG:4326
+    4. For each zoom level, calculate intersecting tiles
+    5. For each tile: extract → decimate → encode → gzip
+    6. Upload to S3 via boto3
+    7. Generate and upload layer.json
 
     If the primary source fails, automatically falls back to the
     pan-European Copernicus GLO-30 (30m) and warns the user.
@@ -451,7 +597,22 @@ def process_dem_to_quantized_mesh(
         })
 
         try:
-            vrt_path = _prepare_dem(source_urls, bbox, job_dir)
+            # ── Try national WCS download first ─────────────────
+            if _wcs_service_url and not _is_fallback:
+                logger.info(
+                    f"[{country_code}] Attempting WCS download: {_wcs_service_url[:80]}..."
+                )
+                vrt_path = _prepare_dem_from_wcs(
+                    service_url=_wcs_service_url,
+                    layer_name=_wcs_layer_name,
+                    bbox=bbox,
+                    work_dir=job_dir,
+                    country_code=country_code,
+                    resolution_m=_wcs_resolution_m,
+                )
+            else:
+                # ── Use existing source URLs (Copernicus or direct files) ──
+                vrt_path = _prepare_dem(source_urls, bbox, job_dir)
         except Exception as vrt_error:
             # === AUTOMATIC FALLBACK TO COPERNICUS GLO-30 ===
             # Primary source failed (e.g. WCS endpoint not compatible with gdalbuildvrt).
@@ -515,10 +676,10 @@ def process_dem_to_quantized_mesh(
             os.environ["AWS_S3_ENDPOINT"] = "s3.eu-central-1.amazonaws.com"
             os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "EMPTY_DIR"
 
-        # Phase 2: Initialize MinIO client
+        # Phase 2: Initialize S3 client
         self.update_state(state='PROCESSING', meta={'progress': 10, 'message': 'Connecting to object storage...'})
-        minio_client = _get_minio_client()
-        _ensure_bucket(minio_client, MINIO_BUCKET)
+        s3_client = _get_s3_client()
+        _ensure_bucket(s3_client, MINIO_BUCKET)
         base_key = f"terrain/{country_code}"
 
         # Phase 3: Calculate total tiles for progress tracking
@@ -557,7 +718,7 @@ def process_dem_to_quantized_mesh(
                     if tile_data:
                         object_key = f"{base_key}/{z}/{col}/{row}.terrain"
                         _upload_bytes(
-                            minio_client,
+                            s3_client,
                             MINIO_BUCKET,
                             object_key,
                             tile_data,
@@ -575,7 +736,7 @@ def process_dem_to_quantized_mesh(
         layer_json_bytes = json.dumps(layer_json, indent=2).encode("utf-8")
 
         _upload_bytes(
-            minio_client,
+            s3_client,
             MINIO_BUCKET,
             f"{base_key}/layer.json",
             layer_json_bytes,
@@ -664,9 +825,9 @@ def process_local_dem_to_quantized_mesh(
                 bbox = (ds.bounds.left, ds.bounds.bottom, ds.bounds.right, ds.bounds.top)
             logger.info(f"[{country_code}] Extracted BBOX from dataset: {bbox}")
 
-        # Initialize MinIO
-        minio_client = _get_minio_client()
-        _ensure_bucket(minio_client, MINIO_BUCKET)
+        # Initialize S3 client
+        s3_client = _get_s3_client()
+        _ensure_bucket(s3_client, MINIO_BUCKET)
         base_key = f"terrain/{country_code}"
 
         # Calculate tiles
@@ -700,7 +861,7 @@ def process_local_dem_to_quantized_mesh(
                     tile_data = _process_tile(ds, z, col, row, max_error=max_error)
                     if tile_data:
                         object_key = f"{base_key}/{z}/{col}/{row}.terrain"
-                        _upload_bytes(minio_client, MINIO_BUCKET, object_key, tile_data,
+                        _upload_bytes(s3_client, MINIO_BUCKET, object_key, tile_data,
                                       content_type="application/vnd.quantized-mesh")
                         available_tiles[z].append((col, row))
                     else:
@@ -711,7 +872,7 @@ def process_local_dem_to_quantized_mesh(
         self.update_state(state='PROCESSING', meta={'progress': 95, 'message': 'Generating metadata...'})
         layer_json = _generate_layer_json(bbox, available_tiles, (zoom_min, zoom_max))
         _upload_bytes(
-            minio_client, MINIO_BUCKET,
+            s3_client, MINIO_BUCKET,
             f"{base_key}/layer.json",
             json.dumps(layer_json, indent=2).encode("utf-8"),
             content_type="application/json"
