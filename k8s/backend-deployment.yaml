@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: ghcr.io/nkz-os/nkz-module-eu-elevation/backend:f8c0156
+          image: ghcr.io/nkz-os/nkz-module-eu-elevation/backend:4c435e0
           imagePullPolicy: Always
           command:
             - uvicorn
@@ -117,7 +117,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: ghcr.io/nkz-os/nkz-module-eu-elevation/backend:f8c0156
+          image: ghcr.io/nkz-os/nkz-module-eu-elevation/backend:4c435e0
           imagePullPolicy: Always
           command:
             - celery
