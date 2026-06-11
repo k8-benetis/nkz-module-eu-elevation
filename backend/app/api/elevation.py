@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 import httpx
 import rasterio
-from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, status, WebSocket, WebSocketDisconnect, UploadFile, File, Form
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
