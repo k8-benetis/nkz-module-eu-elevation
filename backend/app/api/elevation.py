@@ -455,10 +455,25 @@ async def start_ingestion(
     logger.info(f"Ingestion: {request.country_code} ({source_label}) BBOX={bbox} tenant={tenant_id}")
 
     try:
-        task = process_dem_to_quantized_mesh.delay(
-            request.country_code, source_urls, bbox,
-            request.zoom_min, request.zoom_max, request.max_error,
-        )
+        task_kwargs = {
+            "country_code": request.country_code,
+            "source_urls": source_urls,
+            "bbox": bbox,
+            "zoom_min": request.zoom_min,
+            "zoom_max": request.zoom_max,
+            "max_error": request.max_error,
+        }
+
+        # ── If using a national WCS source, pass WCS params ──
+        if dem_source and dem_source.service_type == "WCS" and not dem_source.fallback:
+            task_kwargs.update({
+                "_wcs_service_url": dem_source.service_url,
+                "_wcs_layer_name": dem_source.layer_name or "",
+                "_wcs_resolution_m": float(dem_source.resolution.replace("m", ""))
+                if dem_source.resolution else 25.0,
+            })
+
+        task = process_dem_to_quantized_mesh.delay(**task_kwargs)
         return ProcessResponse(
             job_id=task.id, status="queued",
             message=f"Ingestion for {source_label} queued. WS: /api/elevation/ws/status/{task.id}",
@@ -824,8 +839,9 @@ async def _get_redis():
     global _redis_client
     if _redis_client is None:
         try:
+            redis_url = settings.effective_redis_url
             _redis_client = redis.from_url(
-                settings.REDIS_URL, decode_responses=True,
+                redis_url, decode_responses=True,
                 socket_connect_timeout=2, socket_timeout=2,
             )
         except Exception:
@@ -1082,17 +1098,156 @@ def _get_terrain_minio():
     return _minio_terrain_client
 
 
+# ── Composite tileset helpers ─────────────────────────────────────
+
+def _try_get_layer_json(s3, bucket: str, prefix: str) -> dict | None:
+    """Try to fetch and parse a single tileset's layer.json.
+    
+    Returns the parsed layer.json dict, or None if not found.
+    """
+    try:
+        resp = s3.get_object(Bucket=bucket, Key=f"{prefix}/layer.json")
+        return json.loads(resp["Body"].read())
+    except Exception:
+        return None
+
+
+def _merge_layer_json(
+    country: str,
+    subs: list[str],
+    sub_layers: list[dict],
+    s3,
+    bucket: str,
+) -> dict:
+    """Merge multiple tileset layer.json files into a single composite.
+
+    Each sub-tileset (e.g., EU_56_-7, EU_55_-8) contributes its available
+    tile ranges. The merged layer.json exposes a unified tile URL template
+    pointing to the composite country prefix (e.g., terrain/EU/).
+
+    Tile requests for individual tiles are resolved by the tile endpoint
+    which checks sub-tilesets when the composite prefix has no tile.
+    """
+    merged_available: dict[int, list[tuple[int, int]]] = {}
+    min_zoom = 99
+    max_zoom = 0
+    bounds: list[float] = [180, 90, -180, -90]  # west, south, east, north — expand
+
+    # Collect names/descriptions from the first tileset for metadata
+    name = f"Nekazari {country} Composite Terrain"
+    description = f"Composite terrain for {country} ({len(subs)} sub-tilesets)"
+    description_subs = []
+
+    for sub_prefix, sub_layer in zip(subs, sub_layers):
+        if sub_layer is None:
+            continue
+
+        # Expand bounding box
+        sub_bounds = sub_layer.get("bounds", [])
+        if len(sub_bounds) == 4:
+            bounds[0] = min(bounds[0], sub_bounds[0])  # west
+            bounds[1] = min(bounds[1], sub_bounds[1])  # south
+            bounds[2] = max(bounds[2], sub_bounds[2])  # east
+            bounds[3] = max(bounds[3], sub_bounds[3])  # north
+
+        # Track zoom range
+        z_min = sub_layer.get("minzoom", 0)
+        z_max = sub_layer.get("maxzoom", 0)
+        if z_min < min_zoom:
+            min_zoom = z_min
+        if z_max > max_zoom:
+            max_zoom = z_max
+
+        # Merge available tile ranges
+        available = sub_layer.get("available", [])
+        for zi, z_tiles in enumerate(available):
+            z = z_min + zi
+            if z not in merged_available:
+                merged_available[z] = []
+            if isinstance(z_tiles, list):
+                for tile_range in z_tiles:
+                    if isinstance(tile_range, dict):
+                        merged_available[z].extend([
+                            (x, y)
+                            for x in range(tile_range.get("startX", 0), tile_range.get("endX", 0) + 1)
+                            for y in range(tile_range.get("startY", 0), tile_range.get("endY", 0) + 1)
+                        ])
+
+        description_subs.append(sub_prefix.replace("terrain/", ""))
+
+    if description_subs:
+        description += f": {', '.join(sorted(description_subs))}"
+
+    if not merged_available:
+        return None
+
+    # Format available back to ranges
+    available_formatted = []
+    for z in range(min_zoom, max_zoom + 1):
+        tiles = merged_available.get(z, [])
+        if not tiles:
+            available_formatted.append([])
+            continue
+        cols = sorted(set(t[0] for t in tiles))
+        rows = sorted(set(t[1] for t in tiles))
+        available_formatted.append([{
+            "startX": min(cols), "startY": min(rows),
+            "endX": max(cols), "endY": max(rows)
+        }])
+
+    return {
+        "tilejson": "2.1.0",
+        "name": name,
+        "description": description,
+        "version": "1.0.0",
+        "format": "quantized-mesh-1.0",
+        "scheme": "tms",
+        "tiles": ["{z}/{x}/{y}.terrain"],
+        "projection": "EPSG:4326",
+        "bounds": bounds,
+        "minzoom": min_zoom if min_zoom != 99 else 0,
+        "maxzoom": max_zoom,
+        "available": available_formatted,
+        "extensions": ["octvertexnormals"],
+        "_composite": True,
+        "_sub_tilesets": sorted(description_subs),
+    }
+
+
+def _find_sub_tilesets(s3, bucket: str, country: str) -> list[str]:
+    """Find all tilesets under terrain/ that start with {country}_
+    
+    E.g., for country='EU' returns prefixes like:
+      ['terrain/EU_56_-7', 'terrain/EU_55_-8', ...]
+    """
+    sub_prefixes = []
+    try:
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(
+            Bucket=bucket, Prefix=f"terrain/{country}_", Delimiter="/"
+        ):
+            for cp in page.get("CommonPrefixes", []):
+                prefix = cp["Prefix"].rstrip("/")
+                sub_prefixes.append(prefix)
+    except Exception:
+        pass
+    return sorted(sub_prefixes)
+
+
+# ══════════════════════════════════════════════════════════════════
+
 @router.get("/terrain/{country}/layer.json")
 async def get_terrain_layer_json(country: str):
     """Serve the Cesium layer.json for an ingested terrain tileset.
 
-    The layer.json declares available zoom levels, tile ranges, and the
-    tile URL template. Cesium fetches this first to discover the tileset.
+    Resolves tilesets using this order:
+    1. Exact match (e.g., terrain/ES/ → terrain/ES/layer.json)
+    2. Composite from sub-tilesets (e.g., terrain/EU_* for 'EU')
 
     Tileset names correspond to the 'country_code' used during ingestion:
       ES       → Spain (IGN PNOA or Copernicus fallback)
       EU_56_-7 → Copernicus GLO-30 single tile (Scotland, lat 56 lon -7)
-      EU       → Full pan-European Copernicus GLO-30 (if ingested via bootstrap)
+      EU       → Composite of all EU_* tiles (auto-generated)
     """
     s3 = _get_terrain_minio()
     if not s3:
@@ -1101,6 +1256,7 @@ async def get_terrain_layer_json(country: str):
     bucket = os.getenv("MINIO_BUCKET", "terrain-tilesets")
     key = f"terrain/{country}/layer.json"
 
+    # ── Try exact match first ─────────────────────────────
     try:
         resp = s3.get_object(Bucket=bucket, Key=key)
         data = resp["Body"].read()
@@ -1112,28 +1268,38 @@ async def get_terrain_layer_json(country: str):
                 "Cache-Control": "public, max-age=3600",
             },
         )
-    except Exception as e:
-        # botocore.exceptions.ClientError caught by name to avoid
-        # module-level import that breaks CI without boto3 installed
-        if type(e).__name__ == "ClientError" and hasattr(e, "response"):
-            code = e.response.get("Error", {}).get("Code", "")
-            if code == "NoSuchKey":
-                raise HTTPException(
-                    status_code=404,
-                    detail={
-                        "error": "tileset_not_found",
-                        "message": (
-                            f"No terrain tileset found for '{country}'. "
-                            f"Ingest terrain first via POST /api/elevation/ingest "
-                            f"or run the Copernicus bootstrap script."
-                        ),
-                        "available_tilesets": _list_available_tilesets(s3, bucket),
-                    },
-                )
-            logger.error(f"MinIO error serving {key}: {e}")
-            raise HTTPException(status_code=502, detail="Object storage error")
-        logger.error(f"Error serving {key}: {e}")
-        raise HTTPException(status_code=500, detail="Internal error fetching terrain metadata")
+    except Exception:
+        pass  # Fall through to composite resolution
+
+    # ── Try composite from sub-tilesets ───────────────────
+    subs = _find_sub_tilesets(s3, bucket, country)
+    if subs:
+        sub_layers = [_try_get_layer_json(s3, bucket, p) for p in subs]
+        composite = _merge_layer_json(country, subs, sub_layers, s3, bucket)
+        if composite:
+            logger.info(f"Serving composite layer.json for '{country}' from {len(subs)} sub-tilesets")
+            return JSONResponse(
+                content=composite,
+                media_type="application/json",
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Cache-Control": "public, max-age=600",  # Shorter TTL for composites
+                },
+            )
+
+    # ── Not found (exact or composite) ────────────────────
+    raise HTTPException(
+        status_code=404,
+        detail={
+            "error": "tileset_not_found",
+            "message": (
+                f"No terrain tileset found for '{country}'. "
+                f"Ingest terrain first via POST /api/elevation/ingest "
+                f"or run the Copernicus bootstrap script."
+            ),
+            "available_tilesets": _list_available_tilesets(s3, bucket),
+        },
+    )
 
 
 @router.get("/terrain/{country}/{z}/{x}/{y}.terrain")
@@ -1149,6 +1315,10 @@ async def get_terrain_tile(
     gzip-compressed Quantized Mesh binary covering one tile at the given
     zoom level in the TMS geographic scheme (EPSG:4326).
 
+    Resolves tiles using this order:
+    1. Exact path: terrain/{country}/{z}/{x}/{y}.terrain
+    2. Sub-tileset: terrain/{country}_*/{z}/{x}/{y}.terrain (for composites)
+
     The tile coordinates (z/x/y) follow the Cesium Geographic Tiling scheme:
       - (0, 0, 0) at zoom 0 covers the whole world
       - x = column (0 = westmost), y = row (0 = southmost)
@@ -1160,6 +1330,7 @@ async def get_terrain_tile(
     bucket = os.getenv("MINIO_BUCKET", "terrain-tilesets")
     key = f"terrain/{country}/{z}/{x}/{y}.terrain"
 
+    # ── Try exact path ────────────────────────────────────
     try:
         resp = s3.get_object(Bucket=bucket, Key=key)
         data = resp["Body"].read()
@@ -1172,15 +1343,30 @@ async def get_terrain_tile(
                 "Content-Encoding": "gzip",
             },
         )
-    except Exception as e:
-        if type(e).__name__ == "ClientError" and hasattr(e, "response"):
-            code = e.response.get("Error", {}).get("Code", "")
-            if code == "NoSuchKey":
-                return Response(status_code=204)
-            logger.error(f"MinIO error serving tile {key}: {e}")
-            raise HTTPException(status_code=502, detail="Object storage error")
-        logger.error(f"Error serving tile {key}: {e}")
-        raise HTTPException(status_code=500, detail="Internal error fetching terrain tile")
+    except Exception:
+        pass  # Fall through to sub-tileset search
+
+    # ── Try sub-tilesets ──────────────────────────────────
+    subs = _find_sub_tilesets(s3, bucket, country)
+    for sub_prefix in subs:
+        sub_key = f"{sub_prefix}/{z}/{x}/{y}.terrain"
+        try:
+            resp = s3.get_object(Bucket=bucket, Key=sub_key)
+            data = resp["Body"].read()
+            return Response(
+                content=data,
+                media_type="application/vnd.quantized-mesh",
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Cache-Control": "public, max-age=86400, immutable",
+                    "Content-Encoding": "gzip",
+                },
+            )
+        except Exception:
+            continue
+
+    # ── No tile found anywhere ────────────────────────────
+    return Response(status_code=204)
 
 
 def _list_available_tilesets(s3, bucket: str) -> list[str]:

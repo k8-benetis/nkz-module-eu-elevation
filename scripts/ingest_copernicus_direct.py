@@ -31,7 +31,8 @@ import rasterio
 from rasterio.windows import from_bounds
 import quantized_mesh_encoder
 from pydelatin import Delatin
-from minio import Minio
+import boto3
+from botocore.exceptions import ClientError as BotocoreClientError
 
 # ── Configuration ─────────────────────────────────────────────────
 S3_BUCKET = "copernicus-dem-30m"
@@ -195,16 +196,32 @@ def process_tile(ds, zoom: int, col: int, row: int, max_error: float = 0.5):
         return None
 
 
-# ── MinIO ─────────────────────────────────────────────────────────
+# ── S3 / MinIO ─────────────────────────────────────────────────────
 
-def get_minio() -> Minio:
-    return Minio(MINIO_ENDPOINT, access_key=MINIO_ACCESS_KEY,
-                 secret_key=MINIO_SECRET_KEY, secure=False)
+_s3 = None
 
 
-def ensure_bucket(mc: Minio):
-    if not mc.bucket_exists(MINIO_BUCKET):
-        mc.make_bucket(MINIO_BUCKET)
+def get_s3():
+    global _s3
+    if _s3 is not None:
+        return _s3
+    _s3 = boto3.client(
+        "s3",
+        endpoint_url=f"http://{MINIO_ENDPOINT}",
+        aws_access_key_id=MINIO_ACCESS_KEY,
+        aws_secret_access_key=MINIO_SECRET_KEY,
+        config=boto3.session.Config(signature_version="s3v4"),
+        region_name="us-east-1",
+    )
+    return _s3
+
+
+def ensure_bucket(s3):
+    try:
+        s3.head_bucket(Bucket=MINIO_BUCKET)
+    except BotocoreClientError as e:
+        if e.response.get("Error", {}).get("Code") in ("404", "NoSuchBucket"):
+            s3.create_bucket(Bucket=MINIO_BUCKET)
 
 
 # ── Main ──────────────────────────────────────────────────────────
@@ -269,8 +286,8 @@ def main():
 
     # Phase 3: Process tiles and upload
     print("Phase 3: Processing tiles...")
-    mc = get_minio()
-    ensure_bucket(mc)
+    s3 = get_s3()
+    ensure_bucket(s3)
     base_key = f"terrain/{args.output_prefix}"
 
     available: dict[int, list[tuple[int, int]]] = {}
@@ -293,8 +310,8 @@ def main():
                 tile_data = process_tile(ds, z, col, row, max_error=args.max_error)
                 if tile_data:
                     key = f"{base_key}/{z}/{col}/{row}.terrain"
-                    mc.put_object(MINIO_BUCKET, key, io.BytesIO(tile_data), len(tile_data),
-                                  content_type="application/vnd.quantized-mesh")
+                    s3.put_object(Bucket=MINIO_BUCKET, Key=key, Body=tile_data,
+                                  ContentType="application/vnd.quantized-mesh")
                     available[z].append((col, row))
                     uploaded += 1
                 else:
@@ -343,8 +360,8 @@ def main():
         "extensions": ["octvertexnormals"]
     }
     layer_bytes = json.dumps(layer_json, indent=2).encode("utf-8")
-    mc.put_object(MINIO_BUCKET, f"{base_key}/layer.json", io.BytesIO(layer_bytes),
-                  len(layer_bytes), content_type="application/json")
+    s3.put_object(Bucket=MINIO_BUCKET, Key=f"{base_key}/layer.json", Body=layer_bytes,
+                  ContentType="application/json")
     print(f"  layer.json → s3://{MINIO_BUCKET}/{base_key}/layer.json")
 
     # Cleanup
