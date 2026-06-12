@@ -1183,8 +1183,8 @@ def _find_sub_tilesets(s3, bucket: str, country: str) -> list[str]:
     E.g., for country='EU' returns prefixes like:
       ['terrain/EU_56_-7', 'terrain/EU_55_-8', ...]
 
-    Delegates to the shared list_prefixes helper.  Preserved as a thin
-    wrapper for backward compatibility with existing callers/tests.
+    Results are cached in memory with a 300s TTL — the tileset list changes
+    only when new tiles are ingested, which is infrequent.
     """
     return list_prefixes(s3, bucket, f"terrain/{country}_")
 
@@ -1304,6 +1304,48 @@ async def get_terrain_tile(
         pass  # Fall through to sub-tileset search
 
     # ── Try sub-tilesets ──────────────────────────────────
+    # Optimisation: compute likely Copernicus tiles from the Cesium tile
+    # coordinates instead of listing all 1721+ EU_* prefixes.
+    # Cesium tile bounds → Copernicus 1°×1° tile prefixes (max 4).
+
+    # Compute tile geographic bounds
+    num_cols = 2 ** (z + 1)
+    num_rows = 2 ** z
+    tile_west = -180.0 + x * (360.0 / num_cols)
+    tile_south = -90.0 + y * (180.0 / num_rows)
+    tile_east = tile_west + (360.0 / num_cols)
+    tile_north = tile_south + (180.0 / num_rows)
+
+    # Determine which Copernicus 1° tiles cover this area
+    import math
+    lat_start = int(math.floor(tile_south))
+    lat_end = int(math.floor(tile_north))
+    lon_start = int(math.floor(tile_west))
+    lon_end = int(math.floor(tile_east))
+
+    # Try each candidate prefix (≤4)
+    for lat in range(lat_start, lat_end + 1):
+        for lon in range(lon_start, lon_end + 1):
+            # Prefix format: terrain/EU_{lat}_{lon} where lat/lon are signed ints
+            # e.g., terrain/EU_48_2, terrain/EU_51_0, terrain/EU_56_-7
+            cand = f"terrain/{country}_{lat}_{lon}"
+            cand_key = f"{cand}/{z}/{x}/{y}.terrain"
+            try:
+                resp = s3.get_object(Bucket=bucket, Key=cand_key)
+                data = resp["Body"].read()
+                return Response(
+                    content=data,
+                    media_type="application/vnd.quantized-mesh",
+                    headers={
+                        "Access-Control-Allow-Origin": "*",
+                        "Cache-Control": "public, max-age=86400, immutable",
+                        "Content-Encoding": "gzip",
+                    },
+                )
+            except Exception:
+                continue
+
+    # Fallback: full sub-tileset search (only if computed prefixes failed)
     subs = _find_sub_tilesets(s3, bucket, country)
     for sub_prefix in subs:
         sub_key = f"{sub_prefix}/{z}/{x}/{y}.terrain"
