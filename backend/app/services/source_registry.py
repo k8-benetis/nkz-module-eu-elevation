@@ -21,6 +21,7 @@ import httpx
 
 from app.dem_sources import DEMSource, DEM_SOURCES, get_source as get_builtin_source
 from app.config import settings
+from app.common.tenant_utils import normalize_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +322,7 @@ async def fetch_orion_elevation_sources(
             logger.warning("Failed to fetch ElevationSource entities (global scope): %s", e)
     else:
         # Tenant-specific scope query
-        tenant_header = tenant_id.lower().strip().replace("-", "_").replace(" ", "_")
+        tenant_header = normalize_tenant_id(tenant_id)
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.get(
