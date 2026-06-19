@@ -26,6 +26,28 @@ export interface TerrainTokens {
 // EEA ArcGIS REST endpoint is more robust than WMS for CORINE in Cesium 1.100+
 const CLC_REST_URL = 'https://image.discomap.eea.europa.eu/arcgis/rest/services/Corine/CLC2018_WM/MapServer';
 
+// =============================================================================
+// Host region signal (Sub-feature B: smart region base layer)
+// =============================================================================
+// The host publishes { currentRegion, layerAutoMode } onto viewer.__nkzRegion.
+// This module reads it to decide whether to inject EU elevation terrain.
+
+export interface HostRegion {
+  currentRegion: 'navarra' | 'spain' | 'eu' | 'world';
+  layerAutoMode: boolean;
+}
+
+/**
+ * Pure: should the module inject EU elevation terrain?
+ * Only when camera is over EU/world AND auto-switching is active.
+ * When false, the host manages terrain (IDENA/IGN).
+ */
+export function shouldInjectEuTerrain(region: HostRegion | null): boolean {
+  if (!region) return false;
+  if (!region.layerAutoMode) return false;
+  return region.currentRegion === 'eu' || region.currentRegion === 'world';
+}
+
 function getDefaultCopernicusUrl(): string {
     const w = window as any;
     if (w.__ENV__?.EU_ELEVATION_COPERNICUS_URL) {
@@ -86,7 +108,7 @@ export const ElevationLayer: React.FC = () => {
         return name !== 'EllipsoidTerrainProvider';
     }, [viewer]);
 
-    const applyPreference = useCallback((tok: TerrainTokens, layers: ElevationLayerConfig[]) => {
+    const applyPreference = useCallback((tok: TerrainTokens, _layers: ElevationLayerConfig[]) => {
         if (!viewer) return;
         if (applyingRef.current) return; // Don't stack async terrain changes
 
@@ -95,15 +117,10 @@ export const ElevationLayer: React.FC = () => {
         let config: TerrainProviderConfig;
 
         if (tok.provider_type === 'auto') {
-            const match = findLayerByCameraPosition(layers);
-            if (match) {
-                config = { type: 'custom' as const, customUrl: match.url, cesiumIonToken: tok.cesium_ion_token };
-            } else {
-                // No custom layer covers this area.  Let the host manage
-                // terrain (IGN/IDENA for Spain) instead of blindly
-                // activating Copernicus which may not be ingested yet.
-                return;
-            }
+            // Auto mode is now driven by the host region signal (Sub-feature B).
+            // The moveEnd listener above handles EU terrain injection via
+            // viewer.__nkzRegion. Here we just defer to the host.
+            return;
         } else if (!tok.provider_type) {
             // Unset — host manages terrain (IGN/IDENA).
             return;
@@ -144,20 +161,6 @@ export const ElevationLayer: React.FC = () => {
         setTerrainProvider(provider);
     }, [viewer]);
 
-    const findLayerByCameraPosition = (layers: ElevationLayerConfig[]): ElevationLayerConfig | null => {
-        if (!viewer?.camera) return null;
-        try {
-            const pos = viewer.camera.positionCartographic;
-            const lon = Cesium.Math.toDegrees(pos.longitude);
-            const lat = Cesium.Math.toDegrees(pos.latitude);
-            return layers.find(l => {
-                if (l.bbox_minx == null || l.bbox_maxx == null || l.bbox_miny == null || l.bbox_maxy == null) return false;
-                return lon >= l.bbox_minx && lon <= l.bbox_maxx && lat >= l.bbox_miny && lat <= l.bbox_maxy;
-            }) || null;
-        } catch {
-            return null;
-        }
-    };
 
     const applyingRef = useRef(false);
 
@@ -285,9 +288,35 @@ export const ElevationLayer: React.FC = () => {
         const savedOpacity = parseFloat(localStorage.getItem('nkz_clc_opacity') || '0.6');
         if (savedCLC) addCLCLayer(savedOpacity);
 
+        // Subscribe to host region signal (Sub-feature B).
+        // Overrides the internal camera-match auto for 'auto' mode.
+        // For non-auto modes (europe_copernicus, cesium_world, etc.),
+        // the existing preference-driven applyPreference still applies.
         viewer.camera.moveEnd.addEventListener(() => {
-            if (currentModeRef.current === 'auto') {
-                applyPreference(tokensRef.current || { provider_type: 'off' }, layersRef.current);
+            const nkzRegion = (viewer as any).__nkzRegion as HostRegion | undefined;
+            if (shouldInjectEuTerrain(nkzRegion ?? null)) {
+                // Host says EU/world + auto — inject EU elevation terrain.
+                // Avoid injecting if host already has IGN/IDENA (should not happen but guard).
+                if (hasHostTerrain()) return;
+                if (lastAppliedRef.current === 'europe_copernicus') return; // already active
+                lastAppliedRef.current = 'europe_copernicus';
+                const config: TerrainProviderConfig = {
+                    type: 'europe_copernicus',
+                    europeCopernicusUrl: getDefaultCopernicusUrl(),
+                };
+                const provider = createTerrainProvider(config);
+                setTerrainProvider(provider);
+            } else {
+                // Region is Navarra/Spain or manual override → let host manage terrain.
+                // If we previously set EU terrain, remove it.
+                if (activeProviderRef.current) {
+                    console.log('[Elevation] Host should manage terrain — removing EU elevation');
+                    activeProviderRef.current = null;
+                    if (!viewer.isDestroyed()) {
+                        viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+                    }
+                }
+                lastAppliedRef.current = '';
             }
         });
 
