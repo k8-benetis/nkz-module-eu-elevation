@@ -25,3 +25,10 @@ docs/audits/
 *_SPEC.md
 *HANDOVER*.md
 HANDOFF.md
+
+# Security: sensitive files
+*.pem
+*.key
+apikey_*.txt
+*.apikey
+*-secret*
