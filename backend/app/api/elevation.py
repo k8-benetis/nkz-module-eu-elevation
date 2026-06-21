@@ -8,6 +8,7 @@ Tiers:
 """
 
 import io
+import gzip
 import logging
 import asyncio
 import os
@@ -1290,14 +1291,13 @@ async def get_terrain_tile(
     # ── Try exact path ────────────────────────────────────
     try:
         resp = s3.get_object(Bucket=bucket, Key=key)
-        data = resp["Body"].read()
+        data = gzip.decompress(resp["Body"].read())
         return Response(
             content=data,
             media_type="application/vnd.quantized-mesh",
             headers={
                 "Access-Control-Allow-Origin": "*",
                 "Cache-Control": "public, max-age=86400, immutable",
-                "Content-Encoding": "gzip",
             },
         )
     except Exception:
@@ -1332,14 +1332,13 @@ async def get_terrain_tile(
             cand_key = f"{cand}/{z}/{x}/{y}.terrain"
             try:
                 resp = s3.get_object(Bucket=bucket, Key=cand_key)
-                data = resp["Body"].read()
+                data = gzip.decompress(resp["Body"].read())
                 return Response(
                     content=data,
                     media_type="application/vnd.quantized-mesh",
                     headers={
                         "Access-Control-Allow-Origin": "*",
                         "Cache-Control": "public, max-age=86400, immutable",
-                        "Content-Encoding": "gzip",
                     },
                 )
             except Exception:
@@ -1351,14 +1350,13 @@ async def get_terrain_tile(
         sub_key = f"{sub_prefix}/{z}/{x}/{y}.terrain"
         try:
             resp = s3.get_object(Bucket=bucket, Key=sub_key)
-            data = resp["Body"].read()
+            data = gzip.decompress(resp["Body"].read())
             return Response(
                 content=data,
                 media_type="application/vnd.quantized-mesh",
                 headers={
                     "Access-Control-Allow-Origin": "*",
                     "Cache-Control": "public, max-age=86400, immutable",
-                    "Content-Encoding": "gzip",
                 },
             )
         except Exception:
