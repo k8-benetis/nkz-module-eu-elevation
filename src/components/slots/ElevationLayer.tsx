@@ -308,14 +308,11 @@ export const ElevationLayer: React.FC = () => {
                 setTerrainProvider(provider);
             } else {
                 // Region is Navarra/Spain or manual override → let host manage terrain.
-                // If we previously set EU terrain, remove it.
-                if (activeProviderRef.current) {
-                    console.log('[Elevation] Host should manage terrain — removing EU elevation');
-                    activeProviderRef.current = null;
-                    if (!viewer.isDestroyed()) {
-                        viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
-                    }
-                }
+                // NEVER reset to Ellipsoid here: the host's useTerrainProvider will set
+                // IDENA/IGN for Spain or delegate back to us for EU. Resetting to
+                // Ellipsoid causes a one-frame flat terrain flash and races with the
+                // host's delayed React effect that updates __nkzRegion.
+                activeProviderRef.current = null;
                 lastAppliedRef.current = '';
             }
         });
