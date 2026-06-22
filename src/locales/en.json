@@ -93,5 +93,7 @@
     "activeProvider": "Active Provider",
     "fromCatalog": "from catalog",
     "fromCustom": "from custom source",
-    "errInvalidUrl": "Invalid URL — must start with http:// or https://"
+    "errInvalidUrl": "Invalid URL — must start with http:// or https://",
+    "lidarMds": "Surface Model (MDS)",
+    "lidarMdsDesc": "High-res surface model from LiDAR module"
 }

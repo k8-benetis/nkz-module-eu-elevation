@@ -14,7 +14,7 @@
 
 declare const Cesium: any;
 
-export type TerrainProviderType = 'off' | 'europe_copernicus' | 'cesium_world' | 'maptiler' | 'custom' | 'auto';
+export type TerrainProviderType = 'off' | 'europe_copernicus' | 'cesium_world' | 'maptiler' | 'custom' | 'auto' | 'lidar_mds';
 
 export interface TerrainProviderConfig {
     type: TerrainProviderType;
@@ -38,9 +38,29 @@ export function createTerrainProvider(config: TerrainProviderConfig): any {
             return createMapTilerTerrain(config.maptilerApiKey);
         case 'custom':
             return createCustomTerrain(config.customUrl);
+        case 'lidar_mds':
+            return createLidarMdsTerrain(config.customUrl);
         case 'off':
         default:
             return new Cesium.EllipsoidTerrainProvider();
+    }
+}
+
+function createLidarMdsTerrain(url?: string): any {
+    if (!url) {
+        console.warn('[Elevation] MDS terrain URL missing, falling back to ellipsoid');
+        return new Cesium.EllipsoidTerrainProvider();
+    }
+    try {
+        // URL points to lidar module: /api/lidar/terrain/{layer_id}/
+        return new Cesium.CesiumTerrainProvider({
+            url,
+            requestVertexNormals: true,
+            requestWaterMask: false,
+        });
+    } catch (error) {
+        console.warn('[Elevation] MDS terrain failed, falling back to ellipsoid:', error);
+        return new Cesium.EllipsoidTerrainProvider();
     }
 }
 
