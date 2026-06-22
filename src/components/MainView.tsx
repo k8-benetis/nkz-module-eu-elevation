@@ -110,6 +110,7 @@ export const MainView: React.FC = () => {
         if (prefs.provider_type === 'europe_copernicus') return t('europeCopernicus', 'Copernicus EU Terrain');
         if (prefs.provider_type === 'cesium_world') return 'Cesium World Terrain';
         if (prefs.provider_type === 'maptiler') return 'MapTiler Terrain';
+        if (prefs.provider_type === 'lidar_mds') return t('lidarMds', 'Surface Model (MDS)');
         if (prefs.provider_type === 'custom') {
             const layer = layers.find(l => l.url === prefs.custom_terrain_url);
             return layer ? layer.name : 'Custom URL';

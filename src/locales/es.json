@@ -93,5 +93,7 @@
     "activeProvider": "Proveedor Activo",
     "fromCatalog": "del catálogo",
     "fromCustom": "de fuente personalizada",
-    "errInvalidUrl": "URL inválida — debe empezar por http:// o https://"
+    "errInvalidUrl": "URL inválida — debe empezar por http:// o https://",
+    "lidarMds": "Modelo de Superficie (MDS)",
+    "lidarMdsDesc": "Modelo de superficie de alta resolución del módulo LiDAR"
 }

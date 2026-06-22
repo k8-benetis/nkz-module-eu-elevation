@@ -20,6 +20,7 @@ export interface TerrainTokens {
     maptiler_api_key?: string;
     custom_terrain_url?: string;
     europe_copernicus_url?: string;
+    lidar_mds_url?: string;
     provider_type: string;
 }
 
@@ -135,6 +136,8 @@ export const ElevationLayer: React.FC = () => {
             config = { type: 'custom', customUrl: tok.custom_terrain_url };
         } else if (tok.provider_type === 'maptiler') {
             config = { type: 'maptiler', maptilerApiKey: tok.maptiler_api_key };
+        } else if (tok.provider_type === 'lidar_mds') {
+            config = { type: 'lidar_mds', customUrl: tok.lidar_mds_url };
         } else if (tok.provider_type === 'cesium_world') {
             if (!tok.cesium_ion_token) {
                 console.warn('[Elevation] Cesium World Terrain selected but no token configured — keeping current terrain');
