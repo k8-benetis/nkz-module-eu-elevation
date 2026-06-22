@@ -295,30 +295,48 @@ export const ElevationLayer: React.FC = () => {
         // Overrides the internal camera-match auto for 'auto' mode.
         // For non-auto modes (europe_copernicus, cesium_world, etc.),
         // the existing preference-driven applyPreference still applies.
+        const tryInjectEuTerrain = () => {
+            const nkzRegion = (viewer as any).__nkzRegion as HostRegion | undefined;
+            if (!shouldInjectEuTerrain(nkzRegion ?? null)) return;
+            if (lastAppliedRef.current === 'europe_copernicus') return; // already active
+            lastAppliedRef.current = 'europe_copernicus';
+            const config: TerrainProviderConfig = {
+                type: 'europe_copernicus',
+                europeCopernicusUrl: getDefaultCopernicusUrl(),
+            };
+            const provider = createTerrainProvider(config);
+            setTerrainProvider(provider);
+        };
+
+        const clearEuTerrain = () => {
+            // Region is Navarra/Spain or manual override → let host manage terrain.
+            // NEVER reset to Ellipsoid here: the host's useTerrainProvider will set
+            // IDENA/IGN for Spain or delegate back to us for EU. Resetting to
+            // Ellipsoid causes a one-frame flat terrain flash and races with the
+            // host's delayed React effect that updates __nkzRegion.
+            activeProviderRef.current = null;
+            lastAppliedRef.current = '';
+        };
+
         viewer.camera.moveEnd.addEventListener(() => {
             const nkzRegion = (viewer as any).__nkzRegion as HostRegion | undefined;
             if (shouldInjectEuTerrain(nkzRegion ?? null)) {
                 // Host says EU/world + auto — inject EU elevation terrain.
-                // Avoid injecting if host already has IGN/IDENA (should not happen but guard).
-                if (hasHostTerrain()) return;
-                if (lastAppliedRef.current === 'europe_copernicus') return; // already active
-                lastAppliedRef.current = 'europe_copernicus';
-                const config: TerrainProviderConfig = {
-                    type: 'europe_copernicus',
-                    europeCopernicusUrl: getDefaultCopernicusUrl(),
-                };
-                const provider = createTerrainProvider(config);
-                setTerrainProvider(provider);
+                // NOTE: No hasHostTerrain() guard here. The user may have moved from
+                // Spain (IGN terrain active) to EU. IGN doesn't cover France, so we
+                // MUST replace it with EU elevation. The guard only applies in manual
+                // provider selection (applyPreference) where keeping high-res IGN/IDENA
+                // over lower-res Copernicus 30m is intentional.
+                tryInjectEuTerrain();
             } else {
-                // Region is Navarra/Spain or manual override → let host manage terrain.
-                // NEVER reset to Ellipsoid here: the host's useTerrainProvider will set
-                // IDENA/IGN for Spain or delegate back to us for EU. Resetting to
-                // Ellipsoid causes a one-frame flat terrain flash and races with the
-                // host's delayed React effect that updates __nkzRegion.
-                activeProviderRef.current = null;
-                lastAppliedRef.current = '';
+                clearEuTerrain();
             }
         });
+
+        // Initial evaluation — handles the case where camera is already over EU/world
+        // terrain when this component mounts. The initial moveEnd may have fired before
+        // our listener was registered, so we evaluate once immediately.
+        tryInjectEuTerrain();
 
         return () => {
             window.removeEventListener('nkz.elevation.change', onPrefChange);
