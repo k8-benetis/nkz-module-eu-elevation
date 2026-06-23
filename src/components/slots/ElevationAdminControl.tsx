@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Globe, MapIcon, Settings, Key, Link as LinkIcon } from 'lucide-react';
+import { Globe, Settings, Key, Link as LinkIcon } from 'lucide-react';
 import { SlotShell } from '@nekazari/viewer-kit';
 import { Stack, Button } from '@nekazari/ui-kit';
 import { useAuth, NKZClient, useTranslation } from '@nekazari/sdk';
@@ -58,7 +58,6 @@ export const ElevationAdminControl: React.FC = () => {
     const [cesiumToken, setCesiumToken] = useState('');
     const [maptilerKey, setMaptilerKey] = useState('');
     const [customUrl, setCustomUrl] = useState('');
-    const [lidarMdsUrl, setLidarMdsUrl] = useState('');
 
     useEffect(() => {
         Promise.all([
@@ -71,7 +70,6 @@ export const ElevationAdminControl: React.FC = () => {
             setLayers(Array.isArray(lyr) ? lyr : []);
             if (p) {
                 setCustomUrl(p.custom_terrain_url || '');
-                setLidarMdsUrl(p.lidar_mds_url || '');
             }
             setIsLoading(false);
         });
@@ -93,7 +91,6 @@ export const ElevationAdminControl: React.FC = () => {
             if (cesiumToken) payload.cesium_ion_token = cesiumToken;
             if (maptilerKey) payload.maptiler_api_key = maptilerKey;
             payload.custom_terrain_url = customUrl;
-            payload.lidar_mds_url = lidarMdsUrl;
             await apiClient.put('/preferences', payload);
             setShowSettings(false);
             window.dispatchEvent(new CustomEvent('nkz.elevation.change', { detail: { mode: 'refresh' } }));
@@ -149,29 +146,6 @@ export const ElevationAdminControl: React.FC = () => {
                                 )}
                             </button>
                         ))}
-
-                        {/* Lidar MDS (Surface Model) */}
-                        <button
-                            onClick={() => handleProviderChange('lidar_mds')}
-                            className={`w-full text-left px-3 py-2 rounded-nkz-md text-nkz-sm transition-all ${
-                                prefs?.provider_type === 'lidar_mds'
-                                    ? 'bg-nkz-accent-soft border border-nkz-accent-base text-nkz-accent-strong'
-                                    : 'bg-nkz-surface-sunken border border-nkz-border text-nkz-text-primary hover:bg-nkz-surface'
-                            }`}
-                        >
-                            <div className="flex items-center justify-between">
-                                <span className="font-medium">{t('lidarMds', 'Surface Model (MDS)')}</span>
-                                {prefs?.provider_type === 'lidar_mds' && (
-                                    <span className="text-nkz-xs bg-nkz-accent-soft text-nkz-accent-strong px-1.5 py-0.5 rounded-nkz-sm">{t('active', 'Active')}</span>
-                                )}
-                            </div>
-                            <div className="text-nkz-xs text-nkz-text-muted mt-0.5">{t('lidarMdsDesc', 'High-res surface model from LiDAR module')}</div>
-                            {!prefs?.lidar_mds_url && (
-                                <div className="text-nkz-xs text-amber-600 mt-1 flex items-center gap-1">
-                                    <Key className="w-3 h-3" /> {t('needsApiKey', 'URL required — click ⚙ to configure')}
-                                </div>
-                            )}
-                        </button>
 
                         {/* Custom ingested layers */}
                         {layers.filter(l => l.is_active).map(layer => (
@@ -278,19 +252,6 @@ export const ElevationAdminControl: React.FC = () => {
                                     value={customUrl}
                                     onChange={e => setCustomUrl(e.target.value)}
                                     placeholder="https://your-server/terrain/layer.json"
-                                    className="w-full bg-nkz-surface-sunken border border-nkz-border rounded-nkz-md px-3 py-2 text-nkz-sm font-mono focus:border-nkz-accent-base focus:ring-1 focus:ring-nkz-accent-base outline-none"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="text-nkz-xs font-medium text-nkz-text-secondary flex items-center gap-1 mb-1">
-                                    <MapIcon className="w-3 h-3" /> {t('lidarMds', 'Surface Model (MDS) URL')}
-                                </label>
-                                <input
-                                    type="url"
-                                    value={lidarMdsUrl}
-                                    onChange={e => setLidarMdsUrl(e.target.value)}
-                                    placeholder="/api/lidar/terrain/{layer_id}/"
                                     className="w-full bg-nkz-surface-sunken border border-nkz-border rounded-nkz-md px-3 py-2 text-nkz-sm font-mono focus:border-nkz-accent-base focus:ring-1 focus:ring-nkz-accent-base outline-none"
                                 />
                             </div>

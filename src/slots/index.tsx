@@ -56,14 +56,15 @@ export const moduleSlots: ModuleViewerSlots = {
     }
   ],
 
-  // 3. Context panel integration for the map viewer
+  // 3. Admin configuration — module page only, NEVER in viewer context-panel
   'context-panel': [
     {
       id: 'elevation-context-control',
       moduleId: MODULE_ID,
       component: 'ElevationAdminControl',
       priority: 50,
-      localComponent: ElevationAdminControl
+      localComponent: ElevationAdminControl,
+      showWhen: { entityType: [] }, // empty → never matches, module page only
     }
   ],
 
