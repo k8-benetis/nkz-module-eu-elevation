@@ -1003,9 +1003,14 @@ async def get_elevation_raster(
             "message": f"Bbox centre ({centre_lon}, {centre_lat}) outside all DEM coverage areas"
         })
 
+    # Resolve coverage by requested resolution (e.g. ES: 5m -> Elevacion4258_5,
+    # 25m -> Elevacion4258_25). Falls back to the source's default layer.
+    from app.dem_sources import coverage_for_resolution
+    chosen_layer = coverage_for_resolution(dem.country_code, resolution_m) or dem.layer_name
+
     source_dict = {
         "service_url": dem.service_url,
-        "layer_name": dem.layer_name,
+        "layer_name": chosen_layer,
         "format": dem.format,
         "country_code": dem.country_code,
     }
