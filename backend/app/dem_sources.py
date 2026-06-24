@@ -43,10 +43,12 @@ DEM_SOURCES: list[DEMSource] = [
         service_url="https://servicios.idee.es/wcs-inspire/mdt",
         service_type="WCS",
         format="GEOTIFFINT16",
-        resolution="500m",
+        resolution="25m",
         bbox=(-18.2, 27.6, 4.4, 43.8),  # Includes Canarias
-        layer_name="Elevacion4326_500",
-        notes="IGN PNOA MDT via WCS 1.0.0. Coverage: Elevacion4326_500 (25m ETRS89). Tambien disponible: 5m, 200m, 500m, 1000m"
+        layer_name="Elevacion4258_25",  # ETRS89 geographic 25m (best national, all Spain)
+        notes="IGN PNOA MDT via WCS 1.0.0, ETRS89 geographic. Coberturas finas: "
+              "Elevacion4258_25 (25m), Elevacion4258_5 (5m). "
+              "Elevacion4326_* solo 500m/1000m (grueso) — no usar."
     ),
     DEMSource(
         country_code="PT",
@@ -305,3 +307,28 @@ def get_sources_for_bbox(
     # Non-fallback first, then fallback
     results.sort(key=lambda s: (s.fallback, s.country_code))
     return results
+
+
+# Per-country fine-resolution ETRS89 coverage routing for the /raster endpoint.
+# Map country_code -> {max_resolution_m -> coverage_name}. Selection picks the
+# finest available coverage at or above the requested resolution.
+_FINE_COVERAGES: dict[str, list[tuple[int, str]]] = {
+    # ES: ETRS89 geographic (EPSG:4258). Verified 2026-06-24 against the IGN WCS.
+    # <=5m -> 5m; <=25m -> 25m; >25m -> 25m (best national).
+    "ES": [(5, "Elevacion4258_5"), (25, "Elevacion4258_25"), (10**9, "Elevacion4258_25")],
+}
+
+
+def coverage_for_resolution(country_code: str, resolution_m: float) -> str | None:
+    """Pick the finest WCS coverage for a country at the requested resolution.
+
+    Returns the coverage name (layer) or None if the country has no fine-coverage
+    routing (caller falls back to the source's default layer_name / Copernicus).
+    """
+    table = _FINE_COVERAGES.get(country_code)
+    if not table:
+        return None
+    for max_m, name in table:
+        if resolution_m <= max_m:
+            return name
+    return table[-1][1]  # coarsest fine-coverage
