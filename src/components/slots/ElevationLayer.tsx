@@ -31,9 +31,13 @@ export const ElevationLayer: React.FC = () => {
   const lastAppliedRef = useRef('');
 
   useEffect(() => {
-    if (!viewer?.scene) return;
+    // A destroyed Cesium viewer is still a truthy object; touching .scene /
+    // .camera then throws "_cesiumWidget is undefined". Guard on isDestroyed().
+    const alive = (v: any) => !!v && !(typeof v.isDestroyed === 'function' && v.isDestroyed());
+    if (!alive(viewer) || !viewer.scene) return;
 
     const inject = () => {
+      if (!alive(viewer)) return;
       const region = (viewer as any).__nkzRegion as HostRegion | undefined;
       if (!shouldInjectEuTerrain(region ?? null)) {
         if (activeRef.current) {
@@ -54,13 +58,12 @@ export const ElevationLayer: React.FC = () => {
 
       if (provider && typeof provider.then === 'function') {
         provider.then((resolved: any) => {
-          if (!viewer.isDestroyed()) {
-            viewer.terrainProvider = resolved;
-            activeRef.current = true;
-            lastAppliedRef.current = 'europe_copernicus';
-          }
+          if (!alive(viewer)) return;
+          viewer.terrainProvider = resolved;
+          activeRef.current = true;
+          lastAppliedRef.current = 'europe_copernicus';
         }).catch(() => {});
-      } else {
+      } else if (alive(viewer)) {
         viewer.terrainProvider = provider;
         activeRef.current = true;
         lastAppliedRef.current = 'europe_copernicus';
@@ -72,7 +75,7 @@ export const ElevationLayer: React.FC = () => {
     inject();
 
     return () => {
-      viewer.camera.moveEnd.removeEventListener(inject);
+      if (alive(viewer)) viewer.camera.moveEnd.removeEventListener(inject);
     };
   }, [viewer]);
 
