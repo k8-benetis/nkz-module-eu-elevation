@@ -59,6 +59,16 @@ class Settings(BaseSettings):
     KEYCLOAK_URL: str = os.getenv("KEYCLOAK_URL", "http://keycloak-service:8080/auth")
     KEYCLOAK_REALM: str = "nekazari"
 
+    # Gateway HMAC (shared jwt-secret/secret)
+    HMAC_SECRET: str = os.getenv("HMAC_SECRET", "")
+    REQUIRE_HMAC_SIGNATURE: bool = os.getenv("REQUIRE_HMAC_SIGNATURE", "true").lower() == "true"
+
+    def enforce_required_secrets(self) -> None:
+        if self.REQUIRE_HMAC_SIGNATURE and not self.HMAC_SECRET:
+            raise RuntimeError(
+                "HMAC_SECRET is required when REQUIRE_HMAC_SIGNATURE=true"
+            )
+
     # Processing settings
     DEFAULT_MAX_ERROR: float = 0.5  # pydelatin max error for mesh decimation
     DEFAULT_ZOOM_RANGE: str = "8-14"  # min-max zoom levels for terrain tile generation

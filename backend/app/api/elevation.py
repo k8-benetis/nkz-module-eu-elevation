@@ -23,8 +23,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status, WebSocket,
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from app.middleware.auth import require_auth, get_tenant_id
+from app.middleware import require_auth
 from app.middleware.reader_auth import require_elevation_reader
+from nkz_platform_sdk import AuthContext
 from app.tasks.elevation_tasks import process_dem_to_quantized_mesh, process_local_dem_to_quantized_mesh
 from app.dem_sources import get_source, get_all_sources
 from app.services.point_query import resolve_source, build_wcs_url, WCS_PARAMS
@@ -287,7 +288,7 @@ async def router_health_check():
 # ============================================================================
 
 @router.get("/sources", response_model=List[DEMSourceResponse])
-async def list_dem_sources(current_user: dict = Depends(require_auth)):
+async def list_dem_sources(_auth: AuthContext = require_auth()):
     """List all pre-configured EU/UK DEM data sources for ingestion."""
     sources = get_all_sources(include_fallback=True)
     return [
@@ -309,7 +310,7 @@ async def list_dem_sources(current_user: dict = Depends(require_auth)):
 
 
 @router.get("/sources/catalog", response_model=List[DEMSourceResponse])
-async def list_catalog_sources(current_user: dict = Depends(require_auth)):
+async def list_catalog_sources(_auth: AuthContext = require_auth()):
     """List all pre-configured DEM sources (Tier 1 catalog)."""
     sources = get_all_sources(include_fallback=True)
     return [
@@ -326,12 +327,11 @@ async def list_catalog_sources(current_user: dict = Depends(require_auth)):
 @router.get("/sources/custom", response_model=List[CustomDemSourceResponse])
 async def list_custom_sources(
     db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_tenant_id),
-    current_user: dict = Depends(require_auth),
+    auth: AuthContext = require_auth(),
 ):
     """List all custom DEM sources registered by the current tenant."""
     sources = db.query(CustomDemSource).filter(
-        CustomDemSource.tenant_id == tenant_id
+        CustomDemSource.tenant_id == auth.tenant_id
     ).all()
     result = []
     for s in sources:
@@ -350,7 +350,7 @@ async def list_custom_sources(
 
 
 @router.get("/sources/{country_code}", response_model=DEMSourceResponse)
-async def get_dem_source(country_code: str, current_user: dict = Depends(require_auth)):
+async def get_dem_source(country_code: str, _auth: AuthContext = require_auth()):
     src = get_source(country_code)
     if not src:
         raise HTTPException(status_code=404, detail=f"No DEM source for '{country_code}'")
@@ -367,12 +367,11 @@ async def get_dem_source(country_code: str, current_user: dict = Depends(require
 async def create_custom_source(
     source_in: CustomDemSourceCreate,
     db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_tenant_id),
-    current_user: dict = Depends(require_auth),
+    auth: AuthContext = require_auth(),
 ):
     """Register a new custom DEM source for ingestion."""
     new_source = CustomDemSource(
-        tenant_id=tenant_id,
+        tenant_id=auth.tenant_id,
         name=source_in.name,
         country_code=source_in.country_code,
         service_url=source_in.service_url,
@@ -408,12 +407,11 @@ async def create_custom_source(
 async def delete_custom_source(
     source_id: uuid.UUID,
     db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_tenant_id),
-    current_user: dict = Depends(require_auth),
+    auth: AuthContext = require_auth(),
 ):
     source = db.query(CustomDemSource).filter(
         CustomDemSource.id == source_id,
-        CustomDemSource.tenant_id == tenant_id,
+        CustomDemSource.tenant_id == auth.tenant_id,
     ).first()
     if not source:
         raise HTTPException(status_code=404, detail="Custom DEM source not found")
@@ -429,8 +427,7 @@ async def delete_custom_source(
 @router.post("/ingest", response_model=ProcessResponse, status_code=status.HTTP_202_ACCEPTED)
 async def start_ingestion(
     request: BboxIngestRequest,
-    current_user: dict = Depends(require_auth),
-    tenant_id: str = Depends(get_tenant_id),
+    auth: AuthContext = require_auth(),
 ):
     dem_source = get_source(request.country_code)
     source_urls = request.source_urls
@@ -451,7 +448,7 @@ async def start_ingestion(
             raise HTTPException(status_code=400, detail="BBOX required for custom sources")
 
     source_label = dem_source.country_name if dem_source else "custom"
-    logger.info(f"Ingestion: {request.country_code} ({source_label}) BBOX={bbox} tenant={tenant_id}")
+    logger.info(f"Ingestion: {request.country_code} ({source_label}) BBOX={bbox} tenant={auth.tenant_id}")
 
     try:
         task_kwargs = {
@@ -490,10 +487,9 @@ async def upload_dem(
     bbox: Optional[str] = Form(None),
     zoom_min: int = Form(8),
     zoom_max: int = Form(14),
-    current_user: dict = Depends(require_auth),
-    tenant_id: str = Depends(get_tenant_id),
+    auth: AuthContext = require_auth(),
 ):
-    logger.info(f"Local upload: {file.filename} tenant={tenant_id}")
+    logger.info(f"Local upload: {file.filename} tenant={auth.tenant_id}")
     if not file.filename.lower().endswith(('.tif', '.tiff', '.asc')):
         raise HTTPException(status_code=400, detail="Only .tif, .tiff, or .asc files supported")
 
@@ -535,7 +531,7 @@ async def upload_dem(
 # ============================================================================
 
 @router.get("/status/{job_id}", response_model=JobStatusResponse)
-async def get_job_status(job_id: str, current_user: dict = Depends(require_auth)):
+async def get_job_status(job_id: str, _auth: AuthContext = require_auth()):
     from celery.result import AsyncResult
     from app.worker import celery_app
     task_result = AsyncResult(job_id, app=celery_app)
@@ -554,27 +550,19 @@ async def get_job_status(job_id: str, current_user: dict = Depends(require_auth)
 async def websocket_job_status(websocket: WebSocket, job_id: str):
     await websocket.accept()
 
-    # Authenticate via nkz_token cookie (WebSocket doesn't support custom headers)
     token = websocket.cookies.get("nkz_token")
     if not token:
         await websocket.close(code=4001, reason="Missing auth token")
         return
     try:
-        from jose import jwt, jwk, JWTError
-        from app.middleware.auth import JWT_ISSUER, JWT_AUDIENCE, get_jwks_client
-        unverified_header = jwt.get_unverified_header(token)
-        kid = unverified_header.get("kid")
-        if not kid:
-            await websocket.close(code=4001, reason="Token missing key ID")
-            return
-        jwks_client = get_jwks_client()
-        key_data = jwks_client.get_signing_key(kid)
-        public_key = jwk.construct(key_data)
-        jwt.decode(token, public_key, algorithms=["RS256"], audience=JWT_AUDIENCE, issuer=JWT_ISSUER)
+        from jose import JWTError
+        from app.middleware.ws_auth import verify_websocket_token
+
+        verify_websocket_token(token)
     except JWTError as e:
         await websocket.close(code=4001, reason=f"Invalid token: {e}")
         return
-    except Exception as e:
+    except Exception:
         await websocket.close(code=4001, reason="Auth failed")
         return
 
@@ -615,12 +603,11 @@ async def websocket_job_status(websocket: WebSocket, job_id: str):
 @router.get("/layers", response_model=List[ElevationLayerResponse])
 async def get_elevation_layers(
     db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_tenant_id),
-    current_user: dict = Depends(require_auth),
+    auth: AuthContext = require_auth(),
 ):
     """Get all ingested elevation layers for the current tenant."""
     return db.query(ElevationLayer).filter(
-        ElevationLayer.tenant_id == tenant_id
+        ElevationLayer.tenant_id == auth.tenant_id
     ).all()
 
 
@@ -628,11 +615,10 @@ async def get_elevation_layers(
 async def create_elevation_layer(
     layer_in: ElevationLayerCreate,
     db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_tenant_id),
-    current_user: dict = Depends(require_auth),
+    auth: AuthContext = require_auth(),
 ):
     new_layer = ElevationLayer(
-        tenant_id=tenant_id, name=layer_in.name, url=layer_in.url,
+        tenant_id=auth.tenant_id, name=layer_in.name, url=layer_in.url,
         bbox_minx=layer_in.bbox_minx, bbox_miny=layer_in.bbox_miny,
         bbox_maxx=layer_in.bbox_maxx, bbox_maxy=layer_in.bbox_maxy,
         is_active=layer_in.is_active,
@@ -647,11 +633,10 @@ async def create_elevation_layer(
 async def delete_elevation_layer(
     layer_id: uuid.UUID,
     db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_tenant_id),
-    current_user: dict = Depends(require_auth),
+    auth: AuthContext = require_auth(),
 ):
     layer = db.query(ElevationLayer).filter(
-        ElevationLayer.id == layer_id, ElevationLayer.tenant_id == tenant_id,
+        ElevationLayer.id == layer_id, ElevationLayer.tenant_id == auth.tenant_id,
     ).first()
     if not layer:
         raise HTTPException(status_code=404, detail="Layer not found")
@@ -667,12 +652,11 @@ async def delete_elevation_layer(
 @router.get("/providers", response_model=List[TerrainProviderInfo])
 async def list_providers(
     db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_tenant_id),
-    current_user: dict = Depends(require_auth),
+    auth: AuthContext = require_auth(),
 ):
     """List all available terrain providers with their active status."""
     prefs = db.query(TenantTerrainPreferences).filter(
-        TenantTerrainPreferences.tenant_id == tenant_id,
+        TenantTerrainPreferences.tenant_id == auth.tenant_id,
     ).first()
     active_type = prefs.provider_type if prefs else "europe_copernicus"
 
@@ -687,7 +671,7 @@ async def list_providers(
 
     # Custom ingested layers
     layers = db.query(ElevationLayer).filter(
-        ElevationLayer.tenant_id == tenant_id, ElevationLayer.is_active,
+        ElevationLayer.tenant_id == auth.tenant_id, ElevationLayer.is_active,
     ).all()
     for layer in layers:
         is_layer_active = bool(active_type == "custom" and prefs and prefs.custom_terrain_url == layer.url)
@@ -704,15 +688,14 @@ async def list_providers(
 @router.get("/preferences", response_model=TerrainPreferencesResponse)
 async def get_preferences(
     db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_tenant_id),
-    current_user: dict = Depends(require_auth),
+    auth: AuthContext = require_auth(),
 ):
     """Get current tenant terrain preferences (tokens masked)."""
     prefs = db.query(TenantTerrainPreferences).filter(
-        TenantTerrainPreferences.tenant_id == tenant_id,
+        TenantTerrainPreferences.tenant_id == auth.tenant_id,
     ).first()
     if not prefs:
-        return TerrainPreferencesResponse(tenant_id=tenant_id)
+        return TerrainPreferencesResponse(tenant_id=auth.tenant_id)
     return TerrainPreferencesResponse(
         tenant_id=prefs.tenant_id,
         provider_type=prefs.provider_type,
@@ -726,12 +709,11 @@ async def get_preferences(
 @router.get("/preferences/tokens", response_model=TerrainTokensResponse)
 async def get_tokens(
     db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_tenant_id),
-    current_user: dict = Depends(require_auth),
+    auth: AuthContext = require_auth(),
 ):
     """Return actual token values for the authenticated tenant. Used by ElevationLayer slot."""
     prefs = db.query(TenantTerrainPreferences).filter(
-        TenantTerrainPreferences.tenant_id == tenant_id,
+        TenantTerrainPreferences.tenant_id == auth.tenant_id,
     ).first()
     if not prefs:
         return TerrainTokensResponse()
@@ -748,16 +730,15 @@ async def get_tokens(
 async def update_preferences(
     prefs_in: TerrainPreferencesUpdate,
     db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_tenant_id),
-    current_user: dict = Depends(require_auth),
+    auth: AuthContext = require_auth(),
 ):
     """Update tenant terrain preferences and BYOK tokens."""
     prefs = db.query(TenantTerrainPreferences).filter(
-        TenantTerrainPreferences.tenant_id == tenant_id,
+        TenantTerrainPreferences.tenant_id == auth.tenant_id,
     ).first()
 
     if not prefs:
-        prefs = TenantTerrainPreferences(tenant_id=tenant_id)
+        prefs = TenantTerrainPreferences(tenant_id=auth.tenant_id)
         db.add(prefs)
 
     if prefs_in.provider_type is not None:
@@ -792,11 +773,10 @@ async def update_preferences(
 async def sync_vectorial(
     last_pulled_at: int = 0,
     db: Session = Depends(get_db),
-    tenant_id: str = Depends(get_tenant_id),
-    current_user: dict = Depends(require_auth),
+    auth: AuthContext = require_auth(),
 ):
     current_ts = int(time.time() * 1000)
-    query = db.query(ElevationLayer).filter(ElevationLayer.tenant_id == tenant_id)
+    query = db.query(ElevationLayer).filter(ElevationLayer.tenant_id == auth.tenant_id)
     if last_pulled_at > 0:
         last_dt = datetime.fromtimestamp(last_pulled_at / 1000.0, tz=timezone.utc)
         query = query.filter(ElevationLayer.updated_at >= last_dt)

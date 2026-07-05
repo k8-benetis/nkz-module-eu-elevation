@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import elevation
+from app.config import settings
 from app.db import init_db
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ ALLOWED_ORIGINS = [
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     logger.info("Starting EU Elevation Module API...")
+    settings.enforce_required_secrets()
 
     # Initialize database tables
     try:
