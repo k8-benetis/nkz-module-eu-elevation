@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from app.middleware.auth import require_auth, get_tenant_id
+from app.middleware.reader_auth import require_elevation_reader
 from app.tasks.elevation_tasks import process_dem_to_quantized_mesh, process_local_dem_to_quantized_mesh
 from app.dem_sources import get_source, get_all_sources
 from app.services.point_query import resolve_source, build_wcs_url, WCS_PARAMS
@@ -869,6 +870,7 @@ async def get_elevation_point(
     purpose: PurposeEnum = PurposeEnum.auto,
     source: str = "auto",
     refresh: bool = Query(False, description="Bypass cache and fetch fresh from WCS"),
+    _tenant_id: str = Depends(require_elevation_reader),
 ):
     """Return elevation (meters) for a single WGS84 point. Cached 1h in Redis."""
     lat_r = round(lat, 5)
@@ -988,6 +990,7 @@ async def get_elevation_raster(
     max_lat: float,
     resolution_m: float = 10,
     purpose: PurposeEnum = PurposeEnum.auto,
+    _tenant_id: str = Depends(require_elevation_reader),
 ):
     """Return a DEM grid dict {elevations, origin_lon, origin_lat, pixel_size_deg, cols, rows}
     for the requested bounding box. Uses the best available DEM source."""

@@ -67,7 +67,7 @@ if ALLOWED_ORIGINS:
         allow_origins=ALLOWED_ORIGINS,
         allow_credentials=True,
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Tenant-ID"],
+        allow_headers=["Authorization", "Content-Type", "X-Tenant-ID", "X-User-ID", "X-Auth-Signature", "X-Internal-Service-Secret"],
     )
 else:
     logger.warning("ALLOWED_ORIGINS not set — CORS middleware disabled. Set it for production.")

@@ -83,6 +83,16 @@ spec:
                   name: minio-secret
                   key: root-password
                   optional: true
+            - name: INTERNAL_SERVICE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: internal-service-secret
+                  key: INTERNAL_SERVICE_SECRET
+            - name: HMAC_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: secret
           envFrom:
             - secretRef:
                 name: elevation-db-secret
