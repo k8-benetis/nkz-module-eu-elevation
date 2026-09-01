@@ -12,6 +12,7 @@ dist/
 !LICENSE
 !CURRENT_STATE.md
 !CHANGELOG.md
+!docs/API.md
 .worktrees/
 .venv/
 docs/superpowers/
