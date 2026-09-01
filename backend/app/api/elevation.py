@@ -28,7 +28,10 @@ from app.middleware.reader_auth import require_elevation_reader
 from nkz_platform_sdk import AuthContext
 from app.tasks.elevation_tasks import process_dem_to_quantized_mesh, process_local_dem_to_quantized_mesh
 from app.dem_sources import get_source, get_all_sources
-from app.services.point_query import resolve_source, build_wcs_url, WCS_PARAMS
+from app.services.point_query import (
+    resolve_source, build_wcs_url, WCS_PARAMS,
+    sample_tiff_point, sample_copernicus_point, point_source_plan,
+)
 from app.services.source_registry import SourceRegistry, _parse_resolution
 from enum import Enum
 from app.config import settings
@@ -843,85 +846,125 @@ async def _cache_set(r, key: str, value: dict, ttl: int = 86400):
         pass
 
 
+def _source_object(dem) -> dict:
+    """Describe the DEM source that actually answered, for the response body."""
+    category = (
+        "copernicus_s3" if dem.service_type == "DOWNLOAD"
+        else f"custom_wcs:{dem.country_code}"
+    )
+    return {
+        "id": f"builtin:{dem.country_code}",
+        "name": dem.country_name,
+        "category": category,
+        "is_bare_earth": True,
+        "accuracy_v_m": None,
+        "resolution_m": _parse_resolution(dem.resolution),
+    }
+
+
+def _point_unavailable(lat: float, lon: float, code: str, message: str) -> dict:
+    return {
+        "lat": lat,
+        "lon": lon,
+        "elevation_m": None,
+        "status": "unavailable",
+        "source": None,
+        "error": {"code": code, "message": message},
+    }
+
+
+async def _wcs_point_sample(dem, lat: float, lon: float) -> float | None:
+    """Fetch a small WCS grid and sample the point's pixel. None on failure."""
+    url = build_wcs_url(dem, lat, lon)
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(url, headers={"User-Agent": "Nekazari/2.0"})
+        resp.raise_for_status()
+    return sample_tiff_point(resp.content, lat, lon)
+
+
 @router.get("/point")
 async def get_elevation_point(
     lat: float,
     lon: float,
     purpose: PurposeEnum = PurposeEnum.auto,
     source: str = "auto",
-    refresh: bool = Query(False, description="Bypass cache and fetch fresh from WCS"),
+    refresh: bool = Query(False, description="Bypass cache and fetch fresh"),
     _tenant_id: str = Depends(require_elevation_reader),
 ):
-    """Return elevation (meters) for a single WGS84 point. Cached 1h in Redis."""
+    """Return elevation (m) for a WGS84 point.
+
+    elevation_m is null and status is "unavailable" when no DEM source can
+    answer — never a fabricated 0.0. Cached 1h on success, 5m on failure.
+    """
     lat_r = round(lat, 5)
     lon_r = round(lon, 5)
 
-    # Cache check (skip if refresh requested)
     r = await _get_redis()
-    cache_key = f"elev:{lat_r}:{lon_r}"
+    cache_key = f"elev:point:{source}:{purpose.value}:{lat_r}:{lon_r}"
     if r and not refresh:
         cached = await _cache_get(r, cache_key)
         if cached:
             return cached
 
-    if source == "auto":
-        dem = resolve_source(lat, lon)
-    elif source == "cnig":
-        from app.dem_sources import get_source
-        dem = get_source("ES")
-    elif source == "copernicus":
-        from app.dem_sources import get_source
-        dem = get_source("EU")
-    else:
+    try:
+        plan = point_source_plan(source, lat, lon)
+    except ValueError:
         raise HTTPException(status_code=400, detail=f"Unknown source: {source}")
 
-    if not dem:
-        raise HTTPException(status_code=404, detail={
-            "error": "no_dem_coverage",
-            "message": f"Point ({lon}, {lat}) outside all DEM coverage areas"
-        })
+    if not plan:
+        result = _point_unavailable(
+            lat, lon, "no_dem_coverage",
+            f"Point ({lon}, {lat}) outside all DEM coverage areas",
+        )
+        if r:
+            await _cache_set(r, cache_key, result, ttl=300)
+        return result
 
-    url = build_wcs_url(dem, lat, lon)
+    elevation = None
+    answered = None
+    errors: list[str] = []
+    for dem in plan:
+        try:
+            if dem.service_type == "DOWNLOAD":
+                value = await asyncio.to_thread(sample_copernicus_point, lat, lon)
+            elif dem.service_type == "WCS":
+                value = await _wcs_point_sample(dem, lat, lon)
+            else:
+                errors.append(
+                    f"{dem.country_code}: service_type {dem.service_type} not point-queryable"
+                )
+                continue
+        except Exception as e:
+            errors.append(f"{dem.country_code}: {e}")
+            continue
+        if value is not None:
+            elevation, answered = value, dem
+            break
+        errors.append(f"{dem.country_code}: no usable elevation at point")
 
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers={"User-Agent": "Nekazari/2.0"})
-            resp.raise_for_status()
-    except httpx.HTTPError as e:
-        logger.error("WCS query failed for %s (%s, %s): %s", dem.country_code, lat, lon, e)
-        raise HTTPException(status_code=502, detail={
-            "error": "wcs_unavailable",
-            "message": f"DEM source {dem.country_code} unreachable"
-        })
-
-    try:
-        with rasterio.open(io.BytesIO(resp.content)) as ds:
-            elevation = float(ds.read(1)[0, 0])
-    except Exception as e:
-        logger.error("Failed to parse GeoTIFF from %s: %s", dem.country_code, e)
-        raise HTTPException(status_code=502, detail={
-            "error": "invalid_response",
-            "message": f"Could not parse elevation data from {dem.country_code}"
-        })
+    if answered is None:
+        logger.warning(
+            "elevation point unavailable at (%s, %s) source=%s: %s",
+            lat, lon, source, "; ".join(errors),
+        )
+        result = _point_unavailable(
+            lat, lon, "source_unavailable",
+            f"No DEM source could answer: {'; '.join(errors)}",
+        )
+        if r:
+            await _cache_set(r, cache_key, result, ttl=300)
+        return result
 
     result = {
         "lat": lat,
         "lon": lon,
         "elevation_m": round(elevation, 2),
-        "source": {
-            "id": f"builtin:{dem.country_code}",
-            "name": dem.country_name,
-            "category": f"custom_wcs:{dem.country_code}",
-            "is_bare_earth": True,
-            "accuracy_v_m": None,
-            "resolution_m": int(dem.resolution.replace("m", "")) if dem.resolution else None,
-        },
+        "status": "ok",
+        "source": _source_object(answered),
+        "error": None,
     }
-
-    # Cache for 24h (non-fatal if Redis is down)
     if r:
         await _cache_set(r, cache_key, result, ttl=3600)
-
     return result
 
 
