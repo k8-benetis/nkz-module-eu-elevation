@@ -1,5 +1,6 @@
 """Tests for terrain tile serving endpoints — layer.json, .terrain, composite."""
 
+import gzip
 import json
 import pytest
 
@@ -145,15 +146,17 @@ class TestTileEndpoint:
     @patch("app.api.elevation.get_s3_client")
     def test_tile_served_directly(self, mock_minio):
         """Exact path tile is served with correct headers."""
+        payload = b"quantized-mesh-bytes"
         s3 = MagicMock()
         s3.get_object.return_value = {
-            "Body": MagicMock(read=MagicMock(return_value=b"\x1f\x8b\x08\x00test"))
+            "Body": MagicMock(read=MagicMock(return_value=gzip.compress(payload)))
         }
         mock_minio.return_value = s3
 
         resp = client.get("/api/elevation/terrain/ES/8/120/80.terrain")
         assert resp.status_code == 200
-        assert resp.headers.get("Content-Encoding") == "gzip"
+        assert resp.content == payload  # served decompressed (raw quantized mesh)
+        assert resp.headers.get("Content-Type").startswith("application/vnd.quantized-mesh")
         assert "immutable" in resp.headers.get("Cache-Control", "")
 
     @patch("app.api.elevation.get_s3_client")
@@ -174,8 +177,9 @@ class TestTileEndpoint:
             {"Error": {"Code": "NoSuchKey"}}, "GetObject"
         )
         # First call fails (exact path), second succeeds (sub-tileset)
+        payload = b"sub-tile-quantized-mesh"
         body_mock = MagicMock()
-        body_mock.read.return_value = b"\x1f\x8b\x08\x00sub_tile"
+        body_mock.read.return_value = gzip.compress(payload)
         s3.get_object.side_effect = [
             err,
             {"Body": body_mock},
@@ -190,13 +194,14 @@ class TestTileEndpoint:
 
         resp = client.get("/api/elevation/terrain/EU/8/120/80.terrain")
         assert resp.status_code == 200
+        assert resp.content == payload
 
     @patch("app.api.elevation.get_s3_client")
     def test_tile_returns_cors_headers(self, mock_minio):
         """Tile responses include CORS headers."""
         s3 = MagicMock()
         s3.get_object.return_value = {
-            "Body": MagicMock(read=MagicMock(return_value=b"\x1f\x8b\x08\x00test"))
+            "Body": MagicMock(read=MagicMock(return_value=gzip.compress(b"tile-data")))
         }
         mock_minio.return_value = s3
 
